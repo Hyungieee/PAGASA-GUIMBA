@@ -161,8 +161,8 @@ interface AppContextType {
   loginUser: (emailOrUsername: string, role?: UserRole, providedName?: string, passwordInput?: string) => Promise<boolean> | boolean;
   loginWithSupabase: (emailOrUsername: string, password: string, targetRole?: UserRole, providedName?: string) => Promise<{ success: boolean; message?: string }>;
   signUpWithSupabase: (email: string, password: string, memberData: Omit<Member, 'id' | 'memberId' | 'membershipDate' | 'stats'>) => Promise<{ success: boolean; message?: string; memberId?: string }>;
-  registerMemberRequest: (email: string, fullName?: string, contactNumber?: string, barangay?: string) => Promise<{ success: boolean; member: Member; message: string }>;
-  assignMemberCredentials: (memberId: string, username: string, temporaryPassword: string, sendEmailImmediately: boolean) => Promise<{ success: boolean; emailSent: boolean; error?: string }>;
+  registerMemberRequest: (email: string, fullName?: string, contactNumber?: string, barangay?: string) => Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }>;
+  assignMemberCredentials: (memberId: string, username: string, temporaryPassword: string, sendEmailImmediately?: boolean, requirePasswordChange?: boolean) => Promise<{ success: boolean; emailSent: boolean; error?: string }>;
   resendCredentialEmail: (memberId: string) => Promise<{ success: boolean; error?: string }>;
   toggleMemberAccess: (memberId: string, disable: boolean) => void;
   changeMemberPassword: (memberId: string, newPassword: string) => Promise<{ success: boolean }>;
@@ -836,16 +836,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     fullName?: string,
     contactNumber?: string,
     barangay?: string
-  ): Promise<{ success: boolean; member: Member; message: string }> => {
+  ): Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }> => {
     const trimmedEmail = email.trim().toLowerCase();
     
     // Check if already registered
     const existing = members.find(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
     if (existing) {
+      const isPending = !existing.username || existing.credentialStatus === 'Pending Credentials';
       return {
         success: false,
         member: existing,
-        message: `The Gmail address "${trimmedEmail}" is already registered (Status: ${existing.credentialStatus || existing.membershipStatus}).`
+        isExisting: true,
+        message: isPending 
+          ? `Your Gmail address "${trimmedEmail}" is already registered (Status: Pending Administrator Assignment). Member ID: ${existing.memberId}.`
+          : `An account with Gmail "${trimmedEmail}" already exists. You can sign in using your assigned username or email.`
       };
     }
 
@@ -916,6 +920,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return {
       success: true,
       member: newMember,
+      isExisting: false,
       message: 'Registration request received. Your credentials will be emailed to you upon admin approval.'
     };
   };
@@ -924,7 +929,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     memberId: string,
     username: string,
     temporaryPassword: string,
-    sendEmailImmediately: boolean = true
+    sendEmailImmediately: boolean = true,
+    requirePasswordChange: boolean = true
   ): Promise<{ success: boolean; emailSent: boolean; error?: string }> => {
     const target = members.find(m => m.id === memberId || m.memberId === memberId);
     if (!target) {
@@ -969,7 +975,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       emailDeliveryStatus,
       emailDeliveryDate: sendEmailImmediately ? assignedDate : undefined,
       emailDeliveryError,
-      mustChangePassword: true,
+      mustChangePassword: requirePasswordChange,
       membershipStatus: 'Active',
       gmailAccessEnabled: true,
       isAccessDisabled: false
@@ -1535,6 +1541,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       memberId,
       membershipDate: new Date().toISOString().split('T')[0],
       membershipStatus: data.membershipStatus || (settings.registrationAutoApproval ? 'Active' : 'Pending'),
+      credentialStatus: data.credentialStatus || (data.username ? 'Active' : 'Pending Credentials'),
+      mustChangePassword: data.mustChangePassword !== undefined ? data.mustChangePassword : true,
       stats: {
         eventsJoined: 0,
         totalAttendance: 0,
@@ -1544,7 +1552,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         certificatesEarned: 0
       }
     };
-    setMembers(prev => [newMember, ...prev]);
+    const updated = [newMember, ...members];
+    setMembers(updated);
+    storageService.saveMembers(updated);
     logAuditEvent('Registered New Member', 'Members', `Added member: ${newMember.fullName} (${memberId}).`);
     addNotification('New Member Application', `${newMember.fullName} from Brgy. ${newMember.barangay} registered.`, 'system');
     showToast('success', 'Registration Completed', `Member ${newMember.fullName} profile created with ID ${memberId}.`);

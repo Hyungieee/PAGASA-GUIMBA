@@ -426,7 +426,7 @@ If you did not request a password reset, please ignore this email.
  * Dispatch credential email through backend API or resilient in-app delivery simulation
  */
 export async function sendCredentialEmail(payload: CredentialEmailPayload): Promise<EmailDispatchResult> {
-  const { subject, html } = generateCredentialWelcomeEmailHtml(payload);
+  const { subject, html, plainText } = generateCredentialWelcomeEmailHtml(payload);
   const now = new Date().toISOString();
 
   try {
@@ -443,7 +443,8 @@ export async function sendCredentialEmail(payload: CredentialEmailPayload): Prom
         temporaryPassword: payload.temporaryPassword,
         barangay: payload.barangay,
         subject,
-        htmlContent: html
+        htmlContent: html,
+        plainText
       })
     });
 
@@ -475,3 +476,36 @@ export async function sendCredentialEmail(payload: CredentialEmailPayload): Prom
     htmlContent: html
   };
 }
+
+/**
+ * Generate a direct 1-Click Gmail Web Compose URL with recipient, subject, and credentials body
+ */
+export function getGmailComposeUrl(payload: CredentialEmailPayload): string {
+  const { subject, plainText } = generateCredentialWelcomeEmailHtml(payload);
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(payload.to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(plainText)}`;
+}
+
+/**
+ * Generate standard mailto link
+ */
+export function getMailtoUrl(payload: CredentialEmailPayload): string {
+  const { subject, plainText } = generateCredentialWelcomeEmailHtml(payload);
+  return `mailto:${encodeURIComponent(payload.to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(plainText)}`;
+}
+
+/**
+ * Copy formatted text credentials to user clipboard
+ */
+export async function copyFormattedCredentials(payload: CredentialEmailPayload): Promise<boolean> {
+  const { plainText } = generateCredentialWelcomeEmailHtml(payload);
+  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(plainText.trim());
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+

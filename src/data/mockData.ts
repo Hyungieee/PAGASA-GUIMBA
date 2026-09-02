@@ -83,7 +83,7 @@ export const INITIAL_SETTINGS: OrganizationSettings = {
   logoUrl: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=300&q=80',
   address: 'Guimba Youth Center, Municipal Compound, Guimba, Nueva Ecija 3115',
   municipalHall: 'Guimba Municipal Hall, Nueva Ecija, Philippines',
-  email: 'pagasa.guimbayouth@gmail.com',
+  email: 'morangian31@gmail.com',
   phone: '+63 917 554 8920 / (044) 958 1234',
   socialLinks: {
     facebook: 'https://facebook.com/pagasaguimbayouth',

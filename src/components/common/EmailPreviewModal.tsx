@@ -12,9 +12,16 @@ import {
   FileCode,
   Eye,
   Check,
-  ShieldCheck
+  ShieldCheck,
+  Share2
 } from 'lucide-react';
-import { CredentialEmailPayload, generateCredentialWelcomeEmailHtml } from '../../services/emailService';
+import { 
+  CredentialEmailPayload, 
+  generateCredentialWelcomeEmailHtml,
+  getGmailComposeUrl,
+  getMailtoUrl,
+  copyFormattedCredentials
+} from '../../services/emailService';
 
 interface EmailPreviewModalProps {
   isOpen: boolean;
@@ -42,10 +49,12 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
   if (!isOpen || !payload) return null;
 
   const emailData = generateCredentialWelcomeEmailHtml(payload);
+  const gmailComposeUrl = getGmailComposeUrl(payload);
+  const mailtoUrl = getMailtoUrl(payload);
 
-  const handleCopy = (text: string) => {
+  const handleCopy = async (text: string) => {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -68,41 +77,31 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
         {/* Header */}
         <div className="bg-slate-900 text-white p-5 px-6 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-600/30 text-blue-400 rounded-xl">
-              <Mail className="w-5 h-5" />
+            <div className="p-2.5 bg-blue-600/30 text-blue-400 rounded-xl border border-blue-500/20">
+              <Mail className="w-5 h-5 text-sky-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-base text-white font-display">
-                  Automated Credential Email
+                  Automated Credential Dispatch Center
                 </h3>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
                   deliveryStatus === 'Delivered' 
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                     : deliveryStatus === 'Failed'
                     ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
                     : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                 }`}>
-                  {deliveryStatus === 'Delivered' ? '✓ Delivered' : deliveryStatus === 'Failed' ? '✕ Failed' : '⏳ Pending'}
+                  {deliveryStatus === 'Delivered' ? '✓ Dispatched / Recorded' : deliveryStatus === 'Failed' ? '✕ Delivery Issue' : '⏳ Pending'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Recipient: <span className="text-white font-mono">{payload.to}</span> ({payload.recipientName})
+                Recipient: <span className="text-white font-mono font-bold">{payload.to}</span> ({payload.recipientName})
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {onResend && (
-              <button
-                onClick={handleResendClick}
-                disabled={isSending}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSending ? 'animate-spin' : ''}`} />
-                <span>{isSending ? 'Dispatching...' : 'Resend Email'}</span>
-              </button>
-            )}
             <button
               onClick={onClose}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
@@ -112,16 +111,65 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
           </div>
         </div>
 
+        {/* Quick Send & Action Bar */}
+        <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 border-b border-blue-100 p-3 px-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-700">Quick Actions:</span>
+            <a
+              href={gmailComposeUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              title="Open prepared Gmail composer in new tab"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Open in Gmail Web</span>
+            </a>
+
+            <a
+              href={mailtoUrl}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              title="Open system default email client"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Default Mail App</span>
+            </a>
+
+            <button
+              onClick={() => handleCopy(emailData.plainText)}
+              className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-600" />}
+              <span>{copied ? 'Copied!' : 'Copy Credentials'}</span>
+            </button>
+          </div>
+
+          {onResend && (
+            <button
+              onClick={handleResendClick}
+              disabled={isSending}
+              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer ml-auto"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSending ? 'animate-spin' : ''}`} />
+              <span>{isSending ? 'Triggering Server...' : 'Trigger Server API'}</span>
+            </button>
+          )}
+        </div>
+
         {/* Info & Delivery Meta Bar */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="bg-slate-50 border-b border-slate-200 px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-4 text-slate-600">
+            <div>
+              <span className="text-slate-400 font-semibold">From: </span>
+              <span className="font-semibold text-blue-700 font-mono">morangian31@gmail.com</span>
+            </div>
             <div>
               <span className="text-slate-400 font-semibold">Subject: </span>
               <span className="font-medium text-slate-900">{emailData.subject}</span>
             </div>
             {deliveryDate && (
               <div>
-                <span className="text-slate-400 font-semibold">Sent At: </span>
+                <span className="text-slate-400 font-semibold">Dispatched: </span>
                 <span className="font-mono text-slate-700">{new Date(deliveryDate).toLocaleString()}</span>
               </div>
             )}
@@ -136,7 +184,7 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
               }`}
             >
               <span className="flex items-center gap-1">
-                <Eye className="w-3 h-3" /> Preview
+                <Eye className="w-3 h-3" /> Visual Preview
               </span>
             </button>
             <button
@@ -146,7 +194,7 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
               }`}
             >
               <span className="flex items-center gap-1">
-                <FileCode className="w-3 h-3" /> Raw HTML
+                <FileCode className="w-3 h-3" /> HTML Code
               </span>
             </button>
             <button
@@ -163,7 +211,7 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
         {deliveryError && (
           <div className="bg-rose-50 border-b border-rose-200 px-6 py-2.5 text-xs text-rose-800 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-            <span>Delivery Issue: {deliveryError}. You can retry sending using the "Resend Email" button above.</span>
+            <span>Delivery Notice: {deliveryError}. You can send directly using "Open in Gmail Web" or retry via the server.</span>
           </div>
         )}
 
@@ -211,10 +259,10 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between">
+        <div className="bg-white border-t border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <ShieldCheck className="w-4 h-4 text-blue-600" />
-            <span>Automated template sent automatically upon admin credential assignment.</span>
+            <span>Includes official PAGASA organization seal, login URL, and credentials guidance.</span>
           </div>
           <button
             onClick={onClose}
@@ -228,3 +276,4 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
     </div>
   );
 };
+
