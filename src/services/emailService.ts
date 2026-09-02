@@ -422,13 +422,45 @@ If you did not request a password reset, please ignore this email.
   return { subject, html, plainText };
 }
 
+import { sendEmailViaGmailApi, isGmailConnected, getConnectedGmailEmail } from './gmailService';
+
 /**
- * Dispatch credential email through backend API or resilient in-app delivery simulation
+ * Dispatch credential email through official Gmail API, backend SMTP API, or resilient in-app delivery simulation
  */
 export async function sendCredentialEmail(payload: CredentialEmailPayload): Promise<EmailDispatchResult> {
   const { subject, html, plainText } = generateCredentialWelcomeEmailHtml(payload);
   const now = new Date().toISOString();
 
+  // 1. If user has active Gmail OAuth token, dispatch directly via official Gmail API
+  if (isGmailConnected()) {
+    try {
+      const gmailRes = await sendEmailViaGmailApi({
+        to: payload.to,
+        subject,
+        htmlContent: html,
+        plainTextContent: plainText,
+        fromName: 'PAGASA Guimba Youth Organization',
+        replyTo: getConnectedGmailEmail() || 'morangian31@gmail.com'
+      });
+
+      if (gmailRes.success) {
+        return {
+          success: true,
+          messageId: `gmail_${gmailRes.messageId}`,
+          sentAt: now,
+          recipient: payload.to,
+          subject,
+          htmlContent: html
+        };
+      } else {
+        console.warn('[EmailService] Gmail API send returned error, falling back to server dispatch:', gmailRes.error);
+      }
+    } catch (gErr) {
+      console.warn('[EmailService] Gmail API dispatch exception:', gErr);
+    }
+  }
+
+  // 2. Otherwise dispatch through server endpoint
   try {
     const res = await fetch('/api/send-credential-email', {
       method: 'POST',
@@ -466,7 +498,7 @@ export async function sendCredentialEmail(payload: CredentialEmailPayload): Prom
     console.warn('[EmailService] Network / API route notice, recorded client delivery log:', err);
   }
 
-  // Graceful local delivery confirmation
+  // 3. Graceful local delivery confirmation
   return {
     success: true,
     messageId: `sim_msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,

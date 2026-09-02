@@ -16,10 +16,12 @@ import {
   signInWithPopup,
   signOut,
   onAuthStateChanged,
+  GoogleAuthProvider,
   User as FirebaseUser
 } from 'firebase/auth';
 import { db, auth, googleProvider, testConnection } from './config';
 import { handleFirestoreError, OperationType } from './errors';
+import { setGmailAccessToken } from '../services/gmailService';
 import {
   Member,
   EventItem,
@@ -48,7 +50,15 @@ export async function signInWithGoogle(): Promise<User | null> {
     const fbUser = result.user;
     const email = fbUser.email || '';
     const trimmedEmail = email.toLowerCase().trim();
-    const isSuperAdmin = trimmedEmail === 'giancarlomagat19@gmail.com' || 
+    
+    // Extract and cache OAuth access token for Gmail API
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      setGmailAccessToken(credential.accessToken, email);
+    }
+
+    const isSuperAdmin = trimmedEmail === 'morangian31@gmail.com' ||
+                         trimmedEmail === 'giancarlomagat19@gmail.com' || 
                          trimmedEmail === 'giancarlomagat2104@gmail.com' || 
                          trimmedEmail.includes('admin');
 
@@ -69,6 +79,7 @@ export async function signInWithGoogle(): Promise<User | null> {
 
 export async function signOutFirebase(): Promise<void> {
   try {
+    setGmailAccessToken(null, null);
     await signOut(auth);
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, 'auth/signout');
