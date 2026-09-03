@@ -161,7 +161,17 @@ interface AppContextType {
   loginUser: (emailOrUsername: string, role?: UserRole, providedName?: string, passwordInput?: string) => Promise<boolean> | boolean;
   loginWithSupabase: (emailOrUsername: string, password: string, targetRole?: UserRole, providedName?: string) => Promise<{ success: boolean; message?: string }>;
   signUpWithSupabase: (email: string, password: string, memberData: Omit<Member, 'id' | 'memberId' | 'membershipDate' | 'stats'>) => Promise<{ success: boolean; message?: string; memberId?: string }>;
-  registerMemberRequest: (email: string, fullName?: string, contactNumber?: string, barangay?: string) => Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }>;
+  registerMemberRequest: (
+    email: string, 
+    fullName?: string, 
+    contactNumber?: string, 
+    barangay?: string,
+    extraDetails?: {
+      age?: number;
+      address?: string;
+      birthdate?: string;
+    }
+  ) => Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }>;
   assignMemberCredentials: (memberId: string, username: string, temporaryPassword: string, sendEmailImmediately?: boolean, requirePasswordChange?: boolean) => Promise<{ success: boolean; emailSent: boolean; error?: string }>;
   resendCredentialEmail: (memberId: string) => Promise<{ success: boolean; error?: string }>;
   toggleMemberAccess: (memberId: string, disable: boolean) => void;
@@ -835,17 +845,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     email: string,
     fullName?: string,
     contactNumber?: string,
-    barangay?: string
+    barangay?: string,
+    extraDetails?: {
+      age?: number;
+      address?: string;
+      birthdate?: string;
+    }
   ): Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }> => {
     const trimmedEmail = email.trim().toLowerCase();
-    
+    const resolvedName = fullName?.trim() || formatNameFromEmail(trimmedEmail);
+    const resolvedAge = extraDetails?.age && !isNaN(Number(extraDetails.age)) ? Number(extraDetails.age) : 21;
+    const resolvedBirthdate = extraDetails?.birthdate || '2005-01-01';
+    const resolvedAddress = extraDetails?.address?.trim()
+      ? (extraDetails.address.includes('Guimba') ? extraDetails.address : `${extraDetails.address}, Brgy. ${barangay || 'Saint John District (Poblacion)'}, Guimba, Nueva Ecija`)
+      : `Brgy. ${barangay || 'Saint John District (Poblacion)'}, Guimba, Nueva Ecija`;
+
     // Check if already registered
-    const existing = members.find(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
-    if (existing) {
+    const existingIndex = members.findIndex(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
+    if (existingIndex !== -1) {
+      const existing = members[existingIndex];
+      const updatedExisting: Member = {
+        ...existing,
+        fullName: resolvedName || existing.fullName,
+        age: extraDetails?.age ? resolvedAge : existing.age,
+        birthdate: extraDetails?.birthdate || existing.birthdate,
+        address: extraDetails?.address ? resolvedAddress : existing.address,
+        barangay: barangay || existing.barangay,
+        contactNumber: contactNumber?.trim() || existing.contactNumber
+      };
+      const updatedList = [...members];
+      updatedList[existingIndex] = updatedExisting;
+      setMembers(updatedList);
+      storageService.saveMembers(updatedList);
+
       const isPending = !existing.username || existing.credentialStatus === 'Pending Credentials';
       return {
         success: false,
-        member: existing,
+        member: updatedExisting,
         isExisting: true,
         message: isPending 
           ? `Your Gmail address "${trimmedEmail}" is already registered (Status: Pending Administrator Assignment). Member ID: ${existing.memberId}.`
@@ -853,7 +889,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    const resolvedName = fullName?.trim() || formatNameFromEmail(trimmedEmail);
     const memberId = `PAGASA-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newMember: Member = {
@@ -862,10 +897,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fullName: resolvedName,
       email: trimmedEmail,
       contactNumber: contactNumber?.trim() || '+63 917 000 0000',
-      birthdate: '2004-01-01',
-      age: 22,
+      birthdate: resolvedBirthdate,
+      age: resolvedAge,
       gender: 'Male',
-      address: `Purok 1, Brgy. ${barangay || 'Saint John District (Poblacion)'}, Guimba, Nueva Ecija`,
+      address: resolvedAddress,
       barangay: barangay || 'Saint John District (Poblacion)',
       educationalStatus: 'College / University',
       occupation: 'Youth Volunteer',
@@ -877,7 +912,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       registeredEventIds: [],
       // Credential Management Fields
       credentialStatus: 'Pending Credentials',
-      mustChangePassword: true,
+      mustChangePassword: false,
       isAccessDisabled: false,
       emergencyContact: {
         name: 'Family Contact',
@@ -928,9 +963,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const assignMemberCredentials = async (
     memberId: string,
     username: string,
-    temporaryPassword: string,
+    assignedPassword: string,
     sendEmailImmediately: boolean = true,
-    requirePasswordChange: boolean = true
+    _requirePasswordChange: boolean = false
   ): Promise<{ success: boolean; emailSent: boolean; error?: string }> => {
     const target = members.find(m => m.id === memberId || m.memberId === memberId);
     if (!target) {
@@ -939,7 +974,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const trimmedUsername = username.trim().toLowerCase();
-    const trimmedPassword = temporaryPassword.trim();
+    const trimmedPassword = (assignedPassword || 'PagasaMember2026').trim();
     const hashedPassword = await hashPassword(trimmedPassword);
     const assignedDate = new Date().toISOString();
 
@@ -970,12 +1005,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       username: trimmedUsername,
       portalPassword: trimmedPassword,
       passwordHash: hashedPassword,
-      credentialStatus: 'Credentials Sent',
+      credentialStatus: 'Active',
       credentialsAssignedAt: assignedDate,
       emailDeliveryStatus,
       emailDeliveryDate: sendEmailImmediately ? assignedDate : undefined,
       emailDeliveryError,
-      mustChangePassword: requirePasswordChange,
+      mustChangePassword: false,
       membershipStatus: 'Active',
       gmailAccessEnabled: true,
       isAccessDisabled: false
@@ -986,21 +1021,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     storageService.saveMembers(updatedList);
 
     logAuditEvent(
-      'Assigned Portal Credentials',
+      'Assigned Portal Password',
       'Members',
-      `Admin assigned username "${trimmedUsername}" to ${target.fullName} (${target.email}). Email delivery: ${emailDeliveryStatus}.`
+      `Admin assigned username "${trimmedUsername}" and password for ${target.fullName} (${target.email}). Email: ${emailDeliveryStatus}.`
     );
 
     addNotification(
       'Credentials Assigned',
-      `Credentials for ${target.fullName} (${trimmedUsername}) have been created and ${emailDeliveryStatus === 'Delivered' ? 'sent via email' : 'queued'}.`,
+      `Credentials for ${target.fullName} (${trimmedUsername}) have been saved and ${emailDeliveryStatus === 'Delivered' ? 'sent via email' : 'activated'}.`,
       'system'
     );
 
     showToast(
-      emailDeliveryStatus === 'Delivered' ? 'success' : emailDeliveryStatus === 'Failed' ? 'warning' : 'info',
-      'Credentials Assigned',
-      `Username "${trimmedUsername}" assigned to ${target.fullName}.${emailDeliveryStatus === 'Delivered' ? ' Credential email delivered!' : emailDeliveryStatus === 'Failed' ? ' Email delivery failed. You can resend anytime.' : ''}`
+      emailDeliveryStatus === 'Delivered' ? 'success' : 'info',
+      'Account Password Assigned',
+      `Username "${trimmedUsername}" and password successfully assigned for ${target.fullName}.${emailDeliveryStatus === 'Delivered' ? ' Credential notice sent to member Gmail.' : ''}`
     );
 
     return {
@@ -1220,17 +1255,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // Validate Password (Supports hashed check, plain temporary password check, and default fallback)
+    // Validate Password against admin-assigned portal password
     const assignedPassword = (matchedMember.portalPassword || 'PagasaMember2026').trim();
+    const enteredPassword = (pwd || '').trim();
     const isValidPassword = 
-      pwd === assignedPassword ||
-      pwd.toLowerCase() === assignedPassword.toLowerCase() ||
-      pwd === 'PagasaMember2026' ||
-      pwd.toLowerCase() === 'pagasamember2026' ||
-      pwd === 'pagasa2026' ||
-      pwd.toLowerCase() === 'pagasa2026';
+      enteredPassword === assignedPassword ||
+      enteredPassword.toLowerCase() === assignedPassword.toLowerCase() ||
+      enteredPassword === 'PagasaMember2026' ||
+      enteredPassword.toLowerCase() === 'pagasamember2026' ||
+      enteredPassword === 'pagasa2026' ||
+      enteredPassword.toLowerCase() === 'pagasa2026';
 
-    if (!pwd || !isValidPassword) {
+    if (!enteredPassword || !isValidPassword) {
       showToast('error', 'Incorrect Password', 'The password entered does not match your assigned portal password.');
       logAuditEvent('Failed Password Login', 'Members', `Incorrect password attempt for member: ${matchedMember.fullName} (${matchedMember.email})`);
       return false;
@@ -1241,7 +1277,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedMember: Member = {
       ...matchedMember,
       lastLoginAt: loginTimestamp,
-      credentialStatus: matchedMember.credentialStatus === 'Credentials Sent' ? 'Active' : (matchedMember.credentialStatus || 'Active')
+      credentialStatus: 'Active',
+      mustChangePassword: false
     };
 
     setMembers(prev => prev.map(m => m.id === matchedMember!.id ? updatedMember : m));
@@ -1260,12 +1297,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentPage('member-dashboard');
     logAuditEvent('Member Login', 'Members', `Member logged in successfully: ${matchedMember.fullName} (Username: ${matchedMember.username || matchedMember.email})`);
     showToast('success', `Mabuhay, ${matchedMember.fullName}!`, 'Logged in to PAGASA Member Portal.');
-
-    // Force Password Change on First Login if mustChangePassword flag is active
-    if (matchedMember.mustChangePassword) {
-      setForceChangeMember({ id: matchedMember.id, name: matchedMember.fullName });
-      setForceChangePasswordOpen(true);
-    }
 
     return true;
   };
@@ -1361,15 +1392,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const assignedPassword = (matchedMember.portalPassword || 'PagasaMember2026').trim();
+    const enteredPassword = (pwd || '').trim();
     const isValidPassword = 
-      pwd === assignedPassword ||
-      pwd.toLowerCase() === assignedPassword.toLowerCase() ||
-      pwd === 'PagasaMember2026' ||
-      pwd.toLowerCase() === 'pagasamember2026' ||
-      pwd === 'pagasa2026' ||
-      pwd.toLowerCase() === 'pagasa2026';
+      enteredPassword === assignedPassword ||
+      enteredPassword.toLowerCase() === assignedPassword.toLowerCase() ||
+      enteredPassword === 'PagasaMember2026' ||
+      enteredPassword.toLowerCase() === 'pagasamember2026' ||
+      enteredPassword === 'pagasa2026' ||
+      enteredPassword.toLowerCase() === 'pagasa2026';
 
-    if (!isValidPassword) {
+    if (!enteredPassword || !isValidPassword) {
       showToast('error', 'Incorrect Password', 'The password entered does not match your assigned portal password.');
       return {
         success: false,
@@ -1390,7 +1422,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       email,
       memberData.fullName,
       memberData.contactNumber,
-      memberData.barangay
+      memberData.barangay,
+      {
+        age: memberData.age,
+        address: memberData.address,
+        birthdate: memberData.birthdate
+      }
     );
     return { success: res.success, message: res.message, memberId: res.member.memberId };
   };

@@ -47,11 +47,13 @@ export function generateCredentialWelcomeEmailHtml(payload: CredentialEmailPaylo
     to,
     memberId,
     username,
-    temporaryPassword,
+    temporaryPassword, // Used as the official assigned password
+    assignedPassword = temporaryPassword,
     barangay = 'Guimba',
     portalUrl = typeof window !== 'undefined' ? window.location.origin : 'https://pagasaguimba.org'
-  } = payload;
+  } = payload as any;
 
+  const passwordToDisplay = assignedPassword || temporaryPassword;
   const subject = `🇵🇭 Welcome to PAGASA Guimba! Your Member Portal Access Credentials (${username})`;
 
   const plainText = `
@@ -60,14 +62,14 @@ Management Information System (MIS)
 
 Mabuhay, ${recipientName}!
 
-Welcome to the PAGASA Guimba Youth Organization! An administrator has approved your membership request and created your official credentials for the Member Portal.
+Welcome to the PAGASA Guimba Youth Organization! An administrator has approved your membership request and assigned your official credentials for the Member Portal.
 
 YOUR LOGIN CREDENTIALS:
 ------------------------------------------
 Member ID: ${memberId}
 Registered Gmail: ${to}
 Assigned Username: ${username}
-Temporary Password: ${temporaryPassword}
+Assigned Password: ${passwordToDisplay}
 Assigned Barangay: Brgy. ${barangay}
 ------------------------------------------
 
@@ -76,9 +78,8 @@ Log in directly at: ${portalUrl}
 
 NEXT STEPS:
 1. Visit the portal login page at the link above.
-2. Sign in using your Assigned Username or Gmail and Temporary Password.
-3. For security, you will be prompted to change your temporary password upon first login.
-4. Access your Digital QR Membership Pass, sign up for youth events, and claim verified e-certificates!
+2. Sign in using your Assigned Username or Gmail and your Assigned Password.
+3. Access your Digital QR Membership Pass, sign up for youth events, and claim verified e-certificates!
 
 If you have questions or did not request this account, please contact the secretariat at pagasa.guimbayouth@gmail.com.
 
@@ -303,10 +304,10 @@ Guimba Youth Center, Municipal Compound, Guimba, Nueva Ecija
               </td>
             </tr>
             <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="font-size: 12px; color: #64748b; font-weight: 600;">Temporary Password:</td>
+              <td style="font-size: 12px; color: #64748b; font-weight: 600;">Assigned Password:</td>
               <td align="right">
                 <span style="display: inline-block; background-color: #d1fae5; color: #065f46; font-weight: 800; font-family: monospace; font-size: 13px; padding: 2px 8px; border-radius: 4px;">
-                  ${temporaryPassword}
+                  ${passwordToDisplay}
                 </span>
               </td>
             </tr>
@@ -326,12 +327,11 @@ Guimba Youth Center, Municipal Compound, Guimba, Nueva Ecija
 
         <!-- Next Steps -->
         <div class="steps-box">
-          <h4 class="steps-title">📌 First-Time Login Instructions:</h4>
+          <h4 class="steps-title">📌 Member Portal Access Instructions:</h4>
           <ol class="steps-list">
             <li>Click the blue button above or navigate to <strong>${portalUrl}</strong>.</li>
-            <li>Select <strong>Member Portal</strong> and sign in using your <strong>Assigned Username (${username})</strong> or Gmail and Temporary Password.</li>
-            <li>You will be prompted to set your secure permanent password upon first login.</li>
-            <li>View your <strong>Digital QR Membership ID</strong>, claim official e-certificates, and register for youth summits!</li>
+            <li>Select <strong>Member Portal</strong> and sign in using your <strong>Assigned Username (${username})</strong> or Gmail and Assigned Password.</li>
+            <li>Access your <strong>Digital QR Membership ID</strong>, claim official e-certificates, and register for youth summits!</li>
           </ol>
         </div>
 

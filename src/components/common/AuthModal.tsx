@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GUIMBA_BARANGAYS } from '../../data/mockData';
 import { PagasaLogo } from './PagasaLogo';
-import { X, Lock, Mail, User, Phone, Shield, ArrowRight, CheckCircle2, Loader2, Sparkles, KeyRound, Eye, EyeOff, Send, Clock, Info } from 'lucide-react';
+import { X, Lock, Mail, User, Phone, Shield, ArrowRight, CheckCircle2, Loader2, Sparkles, KeyRound, Eye, EyeOff, Send, Clock, Info, Calendar, MapPin, Hash } from 'lucide-react';
 import { motion } from 'motion/react';
 import confetti from 'canvas-confetti';
+import { calculateAge } from '../../utils/dateUtils';
 
 export const AuthModal: React.FC = () => {
   const {
@@ -31,13 +32,31 @@ export const AuthModal: React.FC = () => {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
-  // New Member Registration form state (Email only required as per spec)
-  const [regEmail, setRegEmail] = useState('');
+  // New Member Registration form state: Name, Age, Address, Birthday, Gmail
   const [regFullName, setRegFullName] = useState('');
-  const [regContact, setRegContact] = useState('');
+  const [regAge, setRegAge] = useState('21');
+  const [regAddress, setRegAddress] = useState('');
+  const [regBirthday, setRegBirthday] = useState('2005-06-15');
+  const [regEmail, setRegEmail] = useState('');
   const [regBarangay, setRegBarangay] = useState(GUIMBA_BARANGAYS[0]);
-  const [showOptionalFields, setShowOptionalFields] = useState(false);
-  const [regSuccessData, setRegSuccessData] = useState<{ memberId: string; email: string; name: string } | null>(null);
+  const [regContact, setRegContact] = useState('');
+  const [submitFeedback, setSubmitFeedback] = useState<{
+    phase: 'submitting' | 'success' | 'existing';
+    member?: any;
+    email: string;
+    name?: string;
+    message?: string;
+  } | null>(null);
+
+  const handleBirthdayChange = (dateVal: string) => {
+    setRegBirthday(dateVal);
+    if (dateVal) {
+      const calculated = calculateAge(dateVal);
+      if (calculated >= 10 && calculated <= 90) {
+        setRegAge(String(calculated));
+      }
+    }
+  };
 
   if (!isAuthModalOpen) return null;
 
@@ -78,26 +97,61 @@ export const AuthModal: React.FC = () => {
     const email = regEmail.trim();
     if (!email) return;
 
+    const parsedAge = parseInt(regAge, 10) || calculateAge(regBirthday);
+    const fullAddress = regAddress.trim()
+      ? `${regAddress.trim()}, Brgy. ${regBarangay}, Guimba, Nueva Ecija`
+      : `Brgy. ${regBarangay}, Guimba, Nueva Ecija`;
+
     setIsSubmitting(true);
+    // Show active submission overlay with animation
+    setSubmitFeedback({
+      phase: 'submitting',
+      email: email,
+      name: regFullName.trim() || undefined
+    });
+
     try {
+      // Natural submit animation timing for tactile visual feedback
+      await new Promise(r => setTimeout(r, 700));
+
       const res = await registerMemberRequest(
         email,
         regFullName.trim() || undefined,
         regContact.trim() || undefined,
-        regBarangay
+        regBarangay,
+        {
+          age: parsedAge,
+          address: fullAddress,
+          birthdate: regBirthday
+        }
       );
 
       if (res.success && res.member) {
-        setRegSuccessData({
-          memberId: res.member.memberId,
+        setSubmitFeedback({
+          phase: 'success',
+          member: res.member,
           email: res.member.email,
-          name: res.member.fullName
+          name: res.member.fullName,
+          message: res.message
         });
 
         try {
-          confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+          confetti({ particleCount: 75, spread: 65, origin: { y: 0.6 } });
         } catch (_) {}
+      } else if (res.isExisting && res.member) {
+        // Member already exists in directory! Show clear confirmation with 1-click login
+        setSubmitFeedback({
+          phase: 'existing',
+          member: res.member,
+          email: res.member.email,
+          name: res.member.fullName,
+          message: res.message
+        });
+      } else {
+        setSubmitFeedback(null);
       }
+    } catch {
+      setSubmitFeedback(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -128,7 +182,7 @@ export const AuthModal: React.FC = () => {
           <button
             onClick={() => {
               setIsAuthModalOpen(false);
-              setRegSuccessData(null);
+              setSubmitFeedback(null);
               setShowForgotModal(false);
             }}
             className="absolute top-4 right-4 text-white/80 hover:text-white p-1 rounded-full bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
@@ -151,7 +205,9 @@ export const AuthModal: React.FC = () => {
               </div>
               <h2 className="text-xl font-display font-bold">
                 {showForgotModal ? 'Reset Portal Password' :
-                  regSuccessData ? 'Request Submitted!' : 
+                  submitFeedback?.phase === 'submitting' ? 'Submitting Registration...' :
+                  submitFeedback?.phase === 'existing' ? 'Member Account Found' :
+                  submitFeedback?.phase === 'success' ? 'Request Submitted!' : 
                   authModalMode === 'admin-login' ? 'Administrator Sign In' :
                   authModalMode === 'login' ? 'Member Portal Sign In' : 'Join PAGASA Youth Organization'}
               </h2>
@@ -225,53 +281,164 @@ export const AuthModal: React.FC = () => {
               </form>
             )}
           </div>
-        ) : regSuccessData ? (
-          /* Success Screen after registration */
-          <div className="p-8 text-center space-y-4">
-            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto">
-              <Clock className="w-9 h-9" />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900">Registration Received!</h3>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-bold text-amber-800">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-              Status: Pending Credentials
-            </div>
-            <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
-              Mabuhay, <strong>{regSuccessData.name}</strong>! Your registration has been submitted. The organization administrator has been notified.
-            </p>
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left text-xs space-y-2 max-w-md mx-auto">
-              <div className="flex items-start gap-2">
-                <Send className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                <p className="text-slate-700">
-                  Your assigned <strong>Username</strong> and <strong>Temporary Password</strong> will be generated by the administrator and sent directly to: <strong className="text-blue-700">{regSuccessData.email}</strong>.
+        ) : submitFeedback ? (
+          /* Animated Submit Overlay & Result Screens */
+          submitFeedback.phase === 'submitting' ? (
+            <div className="p-8 text-center space-y-5">
+              <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full border-4 border-blue-100 animate-ping opacity-35"></div>
+                <div className="w-16 h-16 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Send className="w-6 h-6 text-blue-600 animate-pulse" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold text-slate-900">Submitting Registration...</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                  Checking PAGASA Youth Member Directory and registering record for <strong className="text-blue-700">{submitFeedback.email}</strong>.
                 </p>
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-slate-500 font-mono text-[11px]">
-                <span>Temporary Ref ID:</span>
-                <span className="font-bold text-slate-800">{regSuccessData.memberId}</span>
+              <div className="w-52 mx-auto bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                <div className="bg-blue-600 h-full w-2/3 animate-pulse"></div>
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium">Please wait a moment...</p>
+            </div>
+          ) : submitFeedback.phase === 'existing' ? (
+            <div className="p-8 text-center space-y-4">
+              <motion.div 
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", damping: 14 }}
+                className="w-16 h-16 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center mx-auto shadow-md shadow-blue-500/10"
+              >
+                <Sparkles className="w-8 h-8" />
+              </motion.div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">Account Already Registered</h3>
+                <p className="text-xs text-slate-500 mt-1">This Gmail is already in the PAGASA Member Directory</p>
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-bold text-emerald-800">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                Status: Member Account Active
+              </div>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left text-xs space-y-2 max-w-md mx-auto font-mono">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                  <span className="text-slate-500 font-sans">Full Name:</span>
+                  <strong className="text-slate-800">{submitFeedback.member?.fullName}</strong>
+                </div>
+                <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                  <span className="text-slate-500 font-sans">Member ID:</span>
+                  <strong className="text-slate-800">{submitFeedback.member?.memberId}</strong>
+                </div>
+                <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                  <span className="text-slate-500 font-sans">Assigned Username:</span>
+                  <strong className="text-blue-700">{submitFeedback.member?.username || 'Pending Admin Assignment'}</strong>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-sans">Assigned Password:</span>
+                  <strong className="text-emerald-700">{submitFeedback.member?.portalPassword || 'PagasaMember2026'}</strong>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 max-w-sm mx-auto">
+                You can sign in directly to your Member Portal using your assigned credentials above.
+              </p>
+              <div className="pt-2 flex gap-3 justify-center">
+                <button
+                  onClick={() => {
+                    const targetUsername = submitFeedback.member?.username || submitFeedback.member?.email || '';
+                    const targetPassword = submitFeedback.member?.portalPassword || 'PagasaMember2026';
+                    setLoginIdentifier(targetUsername);
+                    setLoginPassword(targetPassword);
+                    setSubmitFeedback(null);
+                    setAuthModalMode('member-login');
+                  }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors shadow-md flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Sign In with This Account</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAuthModalOpen(false);
+                    setSubmitFeedback(null);
+                  }}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
               </div>
             </div>
-            <div className="pt-2 flex gap-3 justify-center">
-              <button
-                onClick={() => {
-                  setRegSuccessData(null);
-                  setAuthModalMode('login');
-                }}
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-md cursor-pointer"
+          ) : (
+            /* Success Screen after new registration */
+            <div className="p-8 text-center space-y-4">
+              <motion.div 
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", damping: 14 }}
+                className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-md shadow-emerald-500/10"
               >
-                Go to Sign In
-              </button>
-              <button
-                onClick={() => {
-                  setIsAuthModalOpen(false);
-                  setRegSuccessData(null);
-                }}
-                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
-              >
-                Done
-              </button>
+                <CheckCircle2 className="w-9 h-9" />
+              </motion.div>
+              <h3 className="text-xl font-bold text-slate-900">Registration Received!</h3>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-bold text-amber-800">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                Status: Pending Administrator Password Assignment
+              </div>
+              <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
+                Mabuhay, <strong>{submitFeedback.name || submitFeedback.member?.fullName || 'Youth Member'}</strong>! Your registration has been submitted. The organization administrator will review and assign your official credentials.
+              </p>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left text-xs space-y-2 max-w-md mx-auto">
+                <div className="flex items-start gap-2">
+                  <Send className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-slate-700 leading-relaxed">
+                    Your assigned <strong>Username</strong> and <strong>Account Password</strong> will be assigned by the administrator and sent directly to: <strong className="text-blue-700">{submitFeedback.email}</strong>. No temporary password needed.
+                  </p>
+                </div>
+                <div className="space-y-1.5 pt-2 border-t border-slate-200 text-slate-600 text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Full Name:</span>
+                    <strong className="text-slate-800">{submitFeedback.name || submitFeedback.member?.fullName}</strong>
+                  </div>
+                  {submitFeedback.member?.age && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Age & Birthday:</span>
+                      <strong className="text-slate-800">{submitFeedback.member.age} yrs old ({submitFeedback.member.birthdate || 'N/A'})</strong>
+                    </div>
+                  )}
+                  {submitFeedback.member?.address && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Address:</span>
+                      <strong className="text-slate-800 truncate max-w-[200px]">{submitFeedback.member.address}</strong>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-1 border-t border-slate-100 font-mono">
+                    <span className="text-slate-400 font-sans">Member ID:</span>
+                    <strong className="text-blue-700">{submitFeedback.member?.memberId}</strong>
+                  </div>
+                </div>
+              </div>
+              <div className="pt-2 flex gap-3 justify-center">
+                <button
+                  onClick={() => {
+                    setSubmitFeedback(null);
+                    setAuthModalMode('member-login');
+                  }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-md cursor-pointer"
+                >
+                  Go to Sign In
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAuthModalOpen(false);
+                    setSubmitFeedback(null);
+                  }}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
             </div>
-          </div>
+          )
         ) : (
           <div className="p-6">
             {/* Mode Switch Tabs */}
@@ -432,7 +599,7 @@ export const AuthModal: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    {authModalMode === 'admin-login' ? 'Admin Master Password' : 'Password / Temporary Password'}
+                    {authModalMode === 'admin-login' ? 'Admin Master Password' : 'Assigned Portal Password'}
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -494,21 +661,40 @@ export const AuthModal: React.FC = () => {
               </form>
             )}
 
-            {/* Streamlined Registration Form: Email Only Required */}
+            {/* Complete Membership Registration Form: Name, Age, Address, Birthday, Gmail */}
             {authModalMode === 'register' && (
               <form onSubmit={handleRegisterSubmit} className="space-y-4">
-                <div className="p-4 bg-sky-50 border border-sky-200 rounded-2xl space-y-2">
-                  <div className="flex items-center gap-2 text-sky-950 font-bold text-xs">
-                    <Info className="w-4 h-4 text-sky-600 flex-shrink-0" />
-                    <span>No Password Required to Register</span>
+                <div className="p-3.5 bg-blue-50/80 border border-blue-200/80 rounded-2xl space-y-1.5">
+                  <div className="flex items-center gap-2 text-blue-950 font-bold text-xs">
+                    <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                    <span>Member Registration & Credential Issuance</span>
                   </div>
-                  <p className="text-xs text-sky-900 leading-relaxed">
-                    Simply enter your <strong>Gmail / Email address</strong>. An administrator will review your registration, assign an official <strong>Username</strong> and <strong>Temporary Password</strong>, and email your credentials to you.
+                  <p className="text-[11px] text-blue-900 leading-relaxed">
+                    Provide your official youth member credentials below. Once submitted, an administrator will review your information and assign your official <strong>Username</strong> and <strong>Account Password</strong>.
                   </p>
                 </div>
 
+                {/* 1. Full Name */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Full Name <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={regFullName}
+                      onChange={(e) => setRegFullName(e.target.value)}
+                      placeholder="e.g. Gian Carlo Magat"
+                      className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Gmail / Email */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Gmail / Email Address <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
@@ -518,86 +704,110 @@ export const AuthModal: React.FC = () => {
                       required
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
-                      placeholder="e.g. yourname@gmail.com"
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all"
+                      placeholder="e.g. giancarlomagat19@gmail.com"
+                      className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium placeholder:text-slate-400"
                     />
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Your login credentials will be delivered to this email address.
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Your assigned credentials & updates will be sent to this Gmail.
                   </p>
                 </div>
 
-                {/* Optional Details Accordion */}
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowOptionalFields(!showOptionalFields)}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>{showOptionalFields ? '– Hide optional profile details' : '+ Add optional profile details (Name, Contact, Barangay)'}</span>
-                  </button>
+                {/* 3. Birthday & Age (2-Column Grid) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Birthday <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="date"
+                        required
+                        max={new Date().toISOString().split('T')[0]}
+                        value={regBirthday}
+                        onChange={(e) => handleBirthdayChange(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium cursor-pointer"
+                      />
+                    </div>
+                  </div>
 
-                  {showOptionalFields && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="space-y-3 pt-3 mt-2 border-t border-slate-100"
-                    >
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Full Name (Optional)
-                        </label>
-                        <div className="relative">
-                          <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                          <input
-                            type="text"
-                            value={regFullName}
-                            onChange={(e) => setRegFullName(e.target.value)}
-                            placeholder="e.g. Juan Santos Dela Cruz"
-                            className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                          />
-                        </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Age <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Hash className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="number"
+                        required
+                        min="10"
+                        max="99"
+                        value={regAge}
+                        onChange={(e) => setRegAge(e.target.value)}
+                        placeholder="e.g. 21"
+                        className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Address & Barangay */}
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Address (Purok / Street / House No.) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        value={regAddress}
+                        onChange={(e) => setRegAddress(e.target.value)}
+                        placeholder="e.g. Purok 3, Rizal Street"
+                        className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Barangay (Guimba) <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={regBarangay}
+                        onChange={(e) => setRegBarangay(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                      >
+                        {GUIMBA_BARANGAYS.map((b) => (
+                          <option key={b} value={b}>Brgy. {b}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Contact Number <span className="text-slate-400 text-[10px]">(Optional)</span>
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="tel"
+                          value={regContact}
+                          onChange={(e) => setRegContact(e.target.value)}
+                          placeholder="+63 917 000 0000"
+                          className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                        />
                       </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            Contact Number (Optional)
-                          </label>
-                          <div className="relative">
-                            <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                            <input
-                              type="tel"
-                              value={regContact}
-                              onChange={(e) => setRegContact(e.target.value)}
-                              placeholder="+63 917 000 0000"
-                              className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            Barangay (Guimba)
-                          </label>
-                          <select
-                            value={regBarangay}
-                            onChange={(e) => setRegBarangay(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                          >
-                            {GUIMBA_BARANGAYS.map((b) => (
-                              <option key={b} value={b}>Brgy. {b}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
+                    </div>
+                  </div>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || !regEmail.trim()}
+                  disabled={isSubmitting || !regEmail.trim() || !regFullName.trim()}
                   className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? (

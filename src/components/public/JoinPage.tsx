@@ -17,9 +17,13 @@ import {
   ShieldCheck,
   Info,
   KeyRound,
-  AlertCircle
+  AlertCircle,
+  Calendar,
+  MapPin,
+  Hash
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { calculateAge } from '../../utils/dateUtils';
 
 export const JoinPage: React.FC = () => {
   const { 
@@ -32,9 +36,11 @@ export const JoinPage: React.FC = () => {
 
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
-  const [contactNumber, setContactNumber] = useState('');
+  const [age, setAge] = useState('21');
+  const [address, setAddress] = useState('');
+  const [birthday, setBirthday] = useState('2005-06-15');
   const [barangay, setBarangay] = useState(GUIMBA_BARANGAYS[0]);
-  const [showOptionalFields, setShowOptionalFields] = useState(false);
+  const [contactNumber, setContactNumber] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -43,9 +49,24 @@ export const JoinPage: React.FC = () => {
     memberId: string;
     email: string;
     fullName: string;
+    age: number;
+    address: string;
+    birthdate: string;
     barangay: string;
     isExisting?: boolean;
+    username?: string;
+    portalPassword?: string;
   } | null>(null);
+
+  const handleBirthdayChange = (dateVal: string) => {
+    setBirthday(dateVal);
+    if (dateVal) {
+      const calculated = calculateAge(dateVal);
+      if (calculated >= 10 && calculated <= 90) {
+        setAge(String(calculated));
+      }
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
@@ -65,20 +86,35 @@ export const JoinPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedEmail = email.trim().toLowerCase();
+    const trimmedName = fullName.trim();
     if (!trimmedEmail) {
       setErrorMessage('Please enter a valid Gmail / Email address.');
+      return;
+    }
+    if (!trimmedName) {
+      setErrorMessage('Please enter your Full Name.');
       return;
     }
 
     setIsSubmitting(true);
     setErrorMessage(null);
 
+    const parsedAge = parseInt(age, 10) || calculateAge(birthday);
+    const fullAddress = address.trim()
+      ? `${address.trim()}, Brgy. ${barangay}, Guimba, Nueva Ecija`
+      : `Brgy. ${barangay}, Guimba, Nueva Ecija`;
+
     try {
       const res = await registerMemberRequest(
         trimmedEmail,
-        fullName.trim() || undefined,
+        trimmedName,
         contactNumber.trim() || undefined,
-        barangay
+        barangay,
+        {
+          age: parsedAge,
+          address: fullAddress,
+          birthdate: birthday
+        }
       );
 
       if (res.success && res.member) {
@@ -86,7 +122,12 @@ export const JoinPage: React.FC = () => {
           memberId: res.member.memberId,
           email: res.member.email,
           fullName: res.member.fullName,
+          age: res.member.age,
+          address: res.member.address,
+          birthdate: res.member.birthdate,
           barangay: res.member.barangay,
+          username: res.member.username,
+          portalPassword: res.member.portalPassword,
           isExisting: false
         });
         try {
@@ -97,7 +138,12 @@ export const JoinPage: React.FC = () => {
           memberId: res.member.memberId,
           email: res.member.email,
           fullName: res.member.fullName,
+          age: res.member.age,
+          address: res.member.address,
+          birthdate: res.member.birthdate,
           barangay: res.member.barangay,
+          username: res.member.username,
+          portalPassword: res.member.portalPassword,
           isExisting: true
         });
       } else {
@@ -220,7 +266,7 @@ export const JoinPage: React.FC = () => {
                   <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
                     {submittedData.isExisting 
                       ? `Your Gmail address (${submittedData.email}) is already registered with PAGASA Guimba.`
-                      : `Mabuhay, ${submittedData.fullName}! Your registration has been received and queued for administrative credential assignment.`}
+                      : `Mabuhay, ${submittedData.fullName}! Your registration has been received and recorded in the Youth Directory.`}
                   </p>
                 </div>
 
@@ -228,13 +274,47 @@ export const JoinPage: React.FC = () => {
                   {submittedData.memberId}
                 </div>
 
+                {/* Submitted Credentials Summary Card */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left text-xs space-y-2 max-w-md mx-auto font-mono">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                    <span className="text-slate-500 font-sans">Full Name:</span>
+                    <strong className="text-slate-800 font-sans">{submittedData.fullName}</strong>
+                  </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                    <span className="text-slate-500 font-sans">Gmail Address:</span>
+                    <strong className="text-blue-700 font-sans">{submittedData.email}</strong>
+                  </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                    <span className="text-slate-500 font-sans">Age & Birthday:</span>
+                    <strong className="text-slate-800 font-sans">{submittedData.age} yrs old ({submittedData.birthdate || 'N/A'})</strong>
+                  </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                    <span className="text-slate-500 font-sans">Address:</span>
+                    <strong className="text-slate-800 font-sans truncate max-w-[200px]">{submittedData.address}</strong>
+                  </div>
+                  {submittedData.isExisting && submittedData.username && (
+                    <>
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                        <span className="text-slate-500 font-sans">Assigned Username:</span>
+                        <strong className="text-blue-700">{submittedData.username}</strong>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-sans">Assigned Password:</span>
+                        <strong className="text-emerald-700">{submittedData.portalPassword || 'PagasaMember2026'}</strong>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 text-left max-w-md mx-auto space-y-2">
                   <div className="flex items-center gap-2 font-bold text-amber-950">
                     <Clock className="w-4 h-4 text-amber-600" />
-                    <span>Status: Pending Credentials Assignment</span>
+                    <span>Status: {submittedData.isExisting ? 'Active Member' : 'Pending Credentials Assignment'}</span>
                   </div>
                   <p className="leading-relaxed">
-                    An administrator has been notified. They will assign your <strong>Username</strong> and <strong>Temporary Password</strong> in the Member Directory, which will be dispatched to <strong>{submittedData.email}</strong>.
+                    {submittedData.isExisting
+                      ? 'You can sign in directly to the Member Portal using your credentials.'
+                      : 'An administrator will review your profile details and assign your official Username and Password. No temporary password needed.'}
                   </p>
                 </div>
 
@@ -258,13 +338,13 @@ export const JoinPage: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 font-display">
-                    New Member Registration
+                    Youth Member Registration
                   </h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    Enter your email to request member credentials. Password creation is not required.
+                    Complete the form below with your official member credentials.
                   </p>
                 </div>
 
@@ -289,24 +369,42 @@ export const JoinPage: React.FC = () => {
                       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                       <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                     </svg>
-                    <span>{isGoogleLoading ? 'Connecting...' : 'Register / Sign In with Google Account'}</span>
+                    <span>{isGoogleLoading ? 'Connecting...' : 'Quick Register with Google Account'}</span>
                   </button>
 
-                  <div className="relative my-4">
+                  <div className="relative my-3">
                     <div className="absolute inset-0 flex items-center">
                       <div className="w-full border-t border-slate-200"></div>
                     </div>
                     <div className="relative flex justify-center text-[11px] uppercase">
                       <span className="bg-white px-3 text-slate-400 font-semibold tracking-wider">
-                        Or enter your Gmail address
+                        Or enter registration details
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Primary Field: Gmail Address */}
+                {/* 1. Full Name */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Full Name <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g. Gian Carlo Magat"
+                      className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium placeholder:text-slate-400"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Gmail / Email Address */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Gmail / Email Address <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
@@ -316,90 +414,118 @@ export const JoinPage: React.FC = () => {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="e.g. yourname@gmail.com"
-                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all placeholder:text-slate-400"
+                      placeholder="e.g. giancarlomagat19@gmail.com"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium placeholder:text-slate-400"
                     />
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1.5">
+                  <p className="text-[11px] text-slate-500 mt-1">
                     Your assigned portal username & password will be emailed to this address.
                   </p>
                 </div>
 
-                {/* Optional Profile Accordion */}
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowOptionalFields(!showOptionalFields)}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>{showOptionalFields ? '– Hide optional profile fields' : '+ Add optional profile details (Full Name, Contact, Barangay)'}</span>
-                  </button>
-
-                  {showOptionalFields && (
-                    <div className="space-y-4 pt-4 mt-2 border-t border-slate-100 animate-fadeIn">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Full Name (Optional)
-                        </label>
-                        <div className="relative">
-                          <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                          <input
-                            type="text"
-                            value={fullName}
-                            onChange={(e) => setFullName(e.target.value)}
-                            placeholder="e.g. Juan P. Dela Cruz"
-                            className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            Contact / Mobile Number (Optional)
-                          </label>
-                          <div className="relative">
-                            <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                            <input
-                              type="tel"
-                              value={contactNumber}
-                              onChange={(e) => setContactNumber(e.target.value)}
-                              placeholder="+63 917 000 0000"
-                              className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            Guimba Barangay
-                          </label>
-                          <select
-                            value={barangay}
-                            onChange={(e) => setBarangay(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                          >
-                            {GUIMBA_BARANGAYS.map((b) => (
-                              <option key={b} value={b}>Brgy. {b}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
+                {/* 3. Birthday & Age (2-Column Grid) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Birthday <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="date"
+                        required
+                        max={new Date().toISOString().split('T')[0]}
+                        value={birthday}
+                        onChange={(e) => handleBirthdayChange(e.target.value)}
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium cursor-pointer"
+                      />
                     </div>
-                  )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Age <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Hash className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="number"
+                        required
+                        min="10"
+                        max="99"
+                        value={age}
+                        onChange={(e) => setAge(e.target.value)}
+                        placeholder="e.g. 21"
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-4 bg-sky-50 border border-sky-100 rounded-2xl flex items-start gap-2.5 text-xs text-sky-900 leading-relaxed">
+                {/* 4. Address & Barangay */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Address (Purok / Street / House No.) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="e.g. Purok 3, Rizal Street"
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Barangay (Guimba, Nueva Ecija) <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={barangay}
+                        onChange={(e) => setBarangay(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                      >
+                        {GUIMBA_BARANGAYS.map((b) => (
+                          <option key={b} value={b}>Brgy. {b}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Contact / Mobile <span className="text-slate-400 text-[10px]">(Optional)</span>
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="tel"
+                          value={contactNumber}
+                          onChange={(e) => setContactNumber(e.target.value)}
+                          placeholder="+63 917 000 0000"
+                          className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-sky-50 border border-sky-100 rounded-2xl flex items-start gap-2.5 text-xs text-sky-900 leading-relaxed">
                   <Info className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
                   <span>
-                    Upon clicking submit, your member record will be created with status <strong>Pending Credentials</strong>. The administrator will assign your username and password, which will be emailed to your inbox.
+                    Upon clicking submit, your member record will be submitted to the administration. The administrator will assign your official <strong>Username</strong> and <strong>Account Password</strong>, which will be emailed to your Gmail. No temporary password needed.
                   </span>
                 </div>
 
                 {/* Submit Member Registration Button */}
                 <button
                   type="submit"
-                  disabled={isSubmitting || !email.trim()}
+                  disabled={isSubmitting || !email.trim() || !fullName.trim()}
                   className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
