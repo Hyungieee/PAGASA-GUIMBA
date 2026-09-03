@@ -201,6 +201,7 @@ interface AppContextType {
   updateMember: (id: string, updates: Partial<Member>) => void;
   updateMemberStatus: (id: string, status: MembershipStatus) => void;
   deleteMember: (id: string) => void;
+  clearAllMembers: () => void;
 
   events: EventItem[];
   addEvent: (event: Omit<EventItem, 'id' | 'currentParticipants' | 'createdAt'>) => EventItem;
@@ -222,7 +223,17 @@ interface AppContextType {
     method: 'QR_SCAN' | 'MANUAL' | 'SEARCH',
     statusOverride?: AttendanceStatus,
     remarks?: string
-  ) => { success: boolean; message: string; record?: AttendanceRecord; isDuplicate?: boolean };
+  ) => { success: boolean; message: string; record?: AttendanceRecord; isDuplicate?: boolean; alreadyCheckedIn?: boolean };
+  scanAttendanceQR: (
+    qrValue: string, 
+    sessionId: string
+  ) => { success: boolean; message: string; record?: AttendanceRecord; isDuplicate?: boolean; alreadyCheckedIn?: boolean };
+  manualCheckIn: (
+    sessionId: string, 
+    memberId: string, 
+    status?: AttendanceStatus
+  ) => boolean;
+  loginAsMemberDirectly: (member: Member) => void;
   updateAttendanceRecordStatus: (recordId: string, status: AttendanceStatus, remarks?: string) => void;
   deleteAttendanceRecord: (recordId: string) => void;
 
@@ -771,14 +782,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Member Authentication via Google
-      let matchedMember = members.find(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
-      if (!matchedMember) {
-        const fallbackMem = INITIAL_MEMBERS.find(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
-        if (fallbackMem) {
-          matchedMember = fallbackMem;
-          setMembers(prev => [fallbackMem, ...prev.filter(x => x.id !== fallbackMem.id)]);
-        }
-      }
+      const matchedMember = members.find(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
       if (!matchedMember) {
         await signOutFirebase().catch(() => {});
         showToast(
@@ -909,6 +913,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       membershipDate: new Date().toISOString().split('T')[0],
       organizationPosition: 'Youth Member',
       committee: 'General Youth Volunteer',
+      qrCode: `PAGASA:MEMBER:${memberId}:${resolvedName}`,
       registeredEventIds: [],
       // Credential Management Fields
       credentialStatus: 'Pending Credentials',
@@ -1203,20 +1208,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
     );
 
-    // Fallback to INITIAL_MEMBERS if not present in current state
-    if (!matchedMember) {
-      const fallbackMem = INITIAL_MEMBERS.find(m =>
-        (m.username && m.username.toLowerCase().trim() === inputLower) ||
-        (m.email && m.email.toLowerCase().trim() === inputLower) ||
-        (m.memberId && m.memberId.toLowerCase().trim() === inputLower) ||
-        (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
-      );
-      if (fallbackMem) {
-        matchedMember = fallbackMem;
-        setMembers(prev => [fallbackMem, ...prev.filter(x => x.id !== fallbackMem.id)]);
-      }
-    }
-
     if (!matchedMember) {
       showToast(
         'error',
@@ -1342,19 +1333,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (m.memberId && m.memberId.toLowerCase().trim() === inputLower) ||
       (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
     );
-
-    if (!matchedMember) {
-      const fallbackMem = INITIAL_MEMBERS.find(m =>
-        (m.username && m.username.toLowerCase().trim() === inputLower) ||
-        (m.email && m.email.toLowerCase().trim() === inputLower) ||
-        (m.memberId && m.memberId.toLowerCase().trim() === inputLower) ||
-        (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
-      );
-      if (fallbackMem) {
-        matchedMember = fallbackMem;
-        setMembers(prev => [fallbackMem, ...prev.filter(x => x.id !== fallbackMem.id)]);
-      }
-    }
 
     if (!matchedMember) {
       showToast(
@@ -1551,7 +1529,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const resetToDefaults = () => {
     storageService.resetAllToFactoryDefaults();
     setSettings(INITIAL_SETTINGS);
-    setMembers(INITIAL_MEMBERS);
+    setMembers([]);
     setEvents(INITIAL_EVENTS);
     setAttendanceSessions(INITIAL_SESSIONS);
     setAttendanceRecords(INITIAL_ATTENDANCE_RECORDS);
@@ -1576,6 +1554,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...data,
       id: 'mem-' + Date.now(),
       memberId,
+      qrCode: data.qrCode || `PAGASA:MEMBER:${memberId}:${data.fullName}`,
       membershipDate: new Date().toISOString().split('T')[0],
       membershipStatus: data.membershipStatus || (settings.registrationAutoApproval ? 'Active' : 'Pending'),
       credentialStatus: data.credentialStatus || (data.username ? 'Active' : 'Pending Credentials'),
@@ -1644,6 +1623,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setMembers(prev => prev.filter(m => m.id !== id));
     logAuditEvent('Deleted Member Record', 'Members', `Removed member ${target?.fullName} (${target?.memberId}).`);
     showToast('info', 'Member Deleted', 'Member has been removed from registry.');
+  };
+
+  const clearAllMembers = () => {
+    setMembers([]);
+    storageService.saveMembers([]);
+    logAuditEvent('Cleared Member Directory', 'Members', 'Administrator emptied all member records from the registry.');
+    showToast('info', 'Member Directory Emptied', 'All existing member records have been removed. You can now add members manually.');
   };
 
   // Event Management
@@ -1789,21 +1775,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     method: 'QR_SCAN' | 'MANUAL' | 'SEARCH',
     statusOverride?: AttendanceStatus,
     remarks?: string
-  ): { success: boolean; message: string; record?: AttendanceRecord; isDuplicate?: boolean } => {
+  ): { success: boolean; message: string; record?: AttendanceRecord; isDuplicate?: boolean; alreadyCheckedIn?: boolean } => {
     const session = attendanceSessions.find(s => s.id === sessionId);
     if (!session) return { success: false, message: 'Attendance session not found.' };
     if (!session.isOpen) return { success: false, message: 'This attendance session is currently closed.' };
 
     const targetInput = (memberIdentifier || '').trim().toLowerCase();
-    const member = members.find(m => 
-      (m.memberId && m.memberId.toLowerCase() === targetInput) ||
-      m.id === memberIdentifier ||
-      (m.fullName && m.fullName.toLowerCase() === targetInput) ||
-      (m.memberId && targetInput.includes(m.memberId.toLowerCase()))
-    );
+    // Support parsing Member ID pattern (e.g. PAGASA-2026-0042 or PG-2025-001)
+    const idMatch = targetInput.match(/pagasa-\d{4}-\d{3,4}|pg-\d{4}-\d{3,4}/i);
+    const extractedId = idMatch ? idMatch[0].toLowerCase() : null;
+
+    const member = members.find(m => {
+      const mId = (m.memberId || '').toLowerCase();
+      const mName = (m.fullName || '').toLowerCase();
+      const mEmail = (m.email || '').toLowerCase();
+      const mQr = (m.qrCode || '').toLowerCase();
+      const mObjId = (m.id || '').toLowerCase();
+
+      return (
+        (extractedId && mId === extractedId) ||
+        (mId && (mId === targetInput || targetInput.includes(mId))) ||
+        (mObjId && mObjId === targetInput) ||
+        (mName && (mName === targetInput || targetInput.includes(mName))) ||
+        (mEmail && mEmail === targetInput) ||
+        (mQr && (mQr === targetInput || targetInput.includes(mQr) || mQr.includes(targetInput)))
+      );
+    });
 
     if (!member) {
-      return { success: false, message: `Member not found for "${memberIdentifier}". Please verify Member ID.` };
+      return { success: false, message: `Member not found for "${memberIdentifier}". Please verify Member ID or present a valid QR pass.` };
     }
 
     const existingRecord = attendanceRecords.find(r => r.sessionId === sessionId && r.memberId === member.memberId);
@@ -1811,6 +1811,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return {
         success: false,
         isDuplicate: true,
+        alreadyCheckedIn: true,
         message: `⚠ Already Checked In at ${existingRecord.checkInTime} (Status: ${existingRecord.status})`,
         record: existingRecord
       };
@@ -1900,6 +1901,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAttendanceRecords(prev => prev.filter(r => r.id !== recordId));
     logAuditEvent('Deleted Attendance Record', 'Attendance', `Removed attendance record #${recordId}.`);
     showToast('info', 'Record Removed', 'Attendance entry removed.');
+  };
+
+  const scanAttendanceQR = (qrValue: string, sessionId: string) => {
+    return recordAttendance(sessionId, qrValue, 'QR_SCAN');
+  };
+
+  const manualCheckIn = (sessionId: string, memberId: string, status: AttendanceStatus = 'Present') => {
+    const res = recordAttendance(sessionId, memberId, 'MANUAL', status);
+    return res.success;
+  };
+
+  const loginAsMemberDirectly = (member: Member) => {
+    const userObj: User = {
+      id: member.id,
+      name: member.fullName,
+      email: member.email,
+      role: 'MEMBER',
+      avatar: member.profilePicture,
+      memberId: member.memberId
+    };
+    switchRole('MEMBER', userObj);
+    setCurrentPage('member-dashboard');
+    setIsAuthModalOpen(false);
+    showToast('success', `Welcome, ${member.fullName}!`, 'Welcome to the PAGASA Youth Member Portal.');
   };
 
   // Projects
@@ -2094,6 +2119,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateMember,
         updateMemberStatus,
         deleteMember,
+        clearAllMembers,
         registerMemberRequest,
         assignMemberCredentials,
         resendCredentialEmail,
@@ -2114,6 +2140,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createAttendanceSession,
         toggleAttendanceSession,
         recordAttendance,
+        scanAttendanceQR,
+        manualCheckIn,
+        loginAsMemberDirectly,
         updateAttendanceRecordStatus,
         deleteAttendanceRecord,
         projects,

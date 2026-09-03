@@ -254,23 +254,26 @@ class LocalStorageService {
   }
 
   public loadMembers(): Member[] {
-    const stored = this.getItem<Member[]>(STORAGE_KEYS.MEMBERS, INITIAL_MEMBERS);
-    if (!stored || !Array.isArray(stored) || stored.length === 0) {
-      return INITIAL_MEMBERS;
+    const PURGE_FLAG = 'pagasa_mock_members_purged_v3';
+    if (this.isAvailable() && !localStorage.getItem(PURGE_FLAG)) {
+      this.setItem(STORAGE_KEYS.MEMBERS, []);
+      localStorage.setItem(PURGE_FLAG, 'true');
+      return [];
     }
-    // Merge any missing initial members so updates to initial data are never lost
-    const merged = [...stored];
-    for (const initMem of INITIAL_MEMBERS) {
-      const exists = merged.some(m => 
-        (m.id && m.id === initMem.id) || 
-        (m.email && initMem.email && m.email.toLowerCase().trim() === initMem.email.toLowerCase().trim()) ||
-        (m.memberId && initMem.memberId && m.memberId.toLowerCase().trim() === initMem.memberId.toLowerCase().trim())
-      );
-      if (!exists) {
-        merged.unshift(initMem);
-      }
+
+    const stored = this.getItem<Member[]>(STORAGE_KEYS.MEMBERS, []);
+    if (!stored || !Array.isArray(stored)) {
+      return [];
     }
-    return merged;
+    // Filter out any legacy mock data IDs
+    const cleaned = stored.filter(m => 
+      m && m.id && 
+      !['mem-gian', 'mem-fxdgie', 'mem-1', 'mem-2', 'mem-3', 'mem-4', 'mem-5', 'mem-6', 'mem-7'].includes(m.id)
+    );
+    if (cleaned.length !== stored.length) {
+      this.saveMembers(cleaned);
+    }
+    return cleaned;
   }
 
   public saveMembers(members: Member[]): void {
@@ -480,7 +483,7 @@ class LocalStorageService {
 
     // Re-seed initial data
     this.saveSettings(INITIAL_SETTINGS);
-    this.saveMembers(INITIAL_MEMBERS);
+    this.saveMembers([]);
     this.saveEvents(INITIAL_EVENTS);
     this.saveAttendanceSessions(INITIAL_SESSIONS);
     this.saveAttendanceRecords(INITIAL_ATTENDANCE_RECORDS);

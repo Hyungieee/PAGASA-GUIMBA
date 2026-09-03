@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { calculateAge } from '../../utils/dateUtils';
+import { RegistrationSuccessModal } from '../common/RegistrationSuccessModal';
 
 export const JoinPage: React.FC = () => {
   const { 
@@ -31,7 +32,8 @@ export const JoinPage: React.FC = () => {
     setIsAuthModalOpen, 
     setAuthModalMode, 
     setCurrentPage, 
-    loginWithGoogle 
+    loginWithGoogle,
+    loginAsMemberDirectly 
   } = useApp();
 
   const [email, setEmail] = useState('');
@@ -44,6 +46,8 @@ export const JoinPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [registeredMemberRecord, setRegisteredMemberRecord] = useState<any>(null);
 
   const [submittedData, setSubmittedData] = useState<{
     memberId: string;
@@ -118,6 +122,8 @@ export const JoinPage: React.FC = () => {
       );
 
       if (res.success && res.member) {
+        setRegisteredMemberRecord(res.member);
+        setSuccessModalOpen(true);
         setSubmittedData({
           memberId: res.member.memberId,
           email: res.member.email,
@@ -134,6 +140,8 @@ export const JoinPage: React.FC = () => {
           confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
         } catch (_) {}
       } else if (res.isExisting && res.member) {
+        setRegisteredMemberRecord(res.member);
+        setSuccessModalOpen(true);
         setSubmittedData({
           memberId: res.member.memberId,
           email: res.member.email,
@@ -560,6 +568,20 @@ export const JoinPage: React.FC = () => {
         </div>
 
       </div>
+
+      <RegistrationSuccessModal
+        isOpen={successModalOpen}
+        memberId={registeredMemberRecord?.memberId || submittedData?.memberId || 'PAGASA-2026-0001'}
+        onClose={() => setSuccessModalOpen(false)}
+        onProceed={() => {
+          setSuccessModalOpen(false);
+          if (registeredMemberRecord) {
+            loginAsMemberDirectly(registeredMemberRecord);
+          } else {
+            setCurrentPage('home');
+          }
+        }}
+      />
     </div>
   );
 };

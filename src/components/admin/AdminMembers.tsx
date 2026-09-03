@@ -46,6 +46,7 @@ export const AdminMembers: React.FC = () => {
     addMember, 
     updateMember, 
     deleteMember, 
+    clearAllMembers,
     selectedMemberId, 
     setSelectedMemberId,
     switchRole,
@@ -86,12 +87,20 @@ export const AdminMembers: React.FC = () => {
   const [formContact, setFormContact] = useState('');
   const [formBarangay, setFormBarangay] = useState(GUIMBA_BARANGAYS[0]);
   const [formBirthdate, setFormBirthdate] = useState('2004-01-01');
+  const [formAge, setFormAge] = useState<number>(22);
   const [formGender, setFormGender] = useState<'Male' | 'Female' | 'Prefer not to say' | 'Other'>('Male');
   const [formEducation, setFormEducation] = useState<any>('College / University');
   const [formStatus, setFormStatus] = useState<'Active' | 'Pending' | 'Inactive'>('Active');
   const [formPosition, setFormPosition] = useState('Youth Member');
   const [formCommittee, setFormCommittee] = useState('General Youth Volunteer');
   const [formAddress, setFormAddress] = useState('');
+
+  // Direct Credential assignment in registration modal
+  const [assignCredentialsNow, setAssignCredentialsNow] = useState(true);
+  const [formUsername, setFormUsername] = useState('');
+  const [formPassword, setFormPassword] = useState('PagasaMember2026');
+  const [formShowPassword, setFormShowPassword] = useState(false);
+  const [formSendEmail, setFormSendEmail] = useState(true);
 
   const filteredMembers = members.filter(m => {
     const matchesBarangay = selectedBarangay === 'ALL' || m.barangay === selectedBarangay;
@@ -182,6 +191,34 @@ export const AdminMembers: React.FC = () => {
     }
   };
 
+  const handleAutoGenerateFormUsername = () => {
+    if (!formName.trim()) {
+      addToast('info', 'Name Required', 'Please enter the member full name first.');
+      return;
+    }
+    const existing = members.map(x => x.username).filter(Boolean) as string[];
+    const generated = generateUsername(formName.trim(), existing);
+    setFormUsername(generated);
+    addToast('info', 'Username Generated', `Username set to "${generated}"`);
+  };
+
+  const handleSuggestFormPassword = () => {
+    const suggested = generateTemporaryPassword();
+    setFormPassword(suggested);
+    addToast('info', 'Password Generated', 'Suggested a secure alphanumeric password.');
+  };
+
+  const handleBirthdateChange = (newDate: string) => {
+    setFormBirthdate(newDate);
+    if (newDate) {
+      const birthYear = new Date(newDate).getFullYear();
+      if (!isNaN(birthYear)) {
+        const computedAge = Math.max(12, Math.min(45, 2026 - birthYear));
+        setFormAge(computedAge);
+      }
+    }
+  };
+
   const handleOpenCreate = () => {
     setEditingMember(null);
     setFormName('');
@@ -189,12 +226,18 @@ export const AdminMembers: React.FC = () => {
     setFormContact('+63 9');
     setFormBarangay(GUIMBA_BARANGAYS[0]);
     setFormBirthdate('2004-01-01');
+    setFormAge(22);
     setFormGender('Male');
     setFormEducation('College / University');
     setFormStatus('Active');
     setFormPosition('Youth Member');
     setFormCommittee('General Youth Volunteer');
     setFormAddress('');
+    setAssignCredentialsNow(true);
+    setFormUsername('');
+    setFormPassword('PagasaMember2026');
+    setFormShowPassword(false);
+    setFormSendEmail(true);
     setIsCreateModalOpen(true);
   };
 
@@ -205,22 +248,23 @@ export const AdminMembers: React.FC = () => {
     setFormContact(m.contactNumber);
     setFormBarangay(m.barangay);
     setFormBirthdate(m.birthdate);
+    setFormAge(m.age || 20);
     setFormGender(m.gender);
     setFormEducation(m.educationalStatus);
     setFormStatus(m.membershipStatus);
     setFormPosition(m.organizationPosition || 'Youth Member');
     setFormCommittee(m.committee || 'General Youth Volunteer');
     setFormAddress(m.address);
+    setAssignCredentialsNow(false);
     setIsCreateModalOpen(true);
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formEmail.trim()) return;
 
-    const birthYear = new Date(formBirthdate).getFullYear();
-    const age = Math.max(15, 2026 - birthYear);
     const cleanedEmail = formEmail.trim().toLowerCase();
+    const finalAge = Number(formAge) || 20;
 
     if (editingMember) {
       updateMember(editingMember.id, {
@@ -229,7 +273,7 @@ export const AdminMembers: React.FC = () => {
         contactNumber: formContact,
         barangay: formBarangay,
         birthdate: formBirthdate,
-        age,
+        age: finalAge,
         gender: formGender,
         educationalStatus: formEducation,
         membershipStatus: formStatus,
@@ -237,14 +281,15 @@ export const AdminMembers: React.FC = () => {
         committee: formCommittee,
         address: formAddress
       });
-      addToast(`Member record for ${formName} updated.`, 'success');
+      addToast('success', 'Member Updated', `Member record for ${formName} updated.`);
     } else {
+      const hasDirectCredentials = assignCredentialsNow && formUsername.trim() && formPassword.trim();
       const newMember = addMember({
         fullName: formName.trim(),
         email: cleanedEmail,
         contactNumber: formContact,
         birthdate: formBirthdate,
-        age,
+        age: finalAge,
         gender: formGender,
         address: formAddress || `Purok 1, Brgy. ${formBarangay}, Guimba`,
         barangay: formBarangay,
@@ -253,20 +298,29 @@ export const AdminMembers: React.FC = () => {
         membershipStatus: formStatus,
         organizationPosition: formPosition,
         committee: formCommittee,
-        credentialStatus: 'Pending Credentials',
-        emailDeliveryStatus: 'Pending',
+        username: hasDirectCredentials ? formUsername.trim().toLowerCase() : undefined,
+        portalPassword: hasDirectCredentials ? formPassword.trim() : undefined,
+        credentialStatus: hasDirectCredentials ? 'Active' : 'Pending Credentials',
+        credentialsAssignedAt: hasDirectCredentials ? new Date().toISOString() : undefined,
+        emailDeliveryStatus: hasDirectCredentials ? (formSendEmail ? 'Delivered' : 'Pending') : 'Pending',
+        emailDeliveryDate: hasDirectCredentials && formSendEmail ? new Date().toISOString() : undefined,
+        mustChangePassword: false,
         emergencyContact: {
           name: 'Family Contact',
           relationship: 'Parent / Guardian',
           contactNumber: formContact
         }
       });
-      addToast(`New member ${formName} registered. You can now assign their official Username and Password.`, 'success');
-      
-      // Prompt credential assignment
-      setTimeout(() => {
-        handleOpenAssignModal(newMember);
-      }, 500);
+
+      if (hasDirectCredentials) {
+        addToast('success', 'Member Created & Credentials Set', `Member ${formName} created with Username "${formUsername.trim().toLowerCase()}". Credentials ready!`);
+      } else {
+        addToast('success', 'Member Created', `New member ${formName} registered. You can now assign credentials.`);
+        // Prompt credential assignment
+        setTimeout(() => {
+          handleOpenAssignModal(newMember);
+        }, 500);
+      }
     }
     setIsCreateModalOpen(false);
   };
@@ -382,6 +436,33 @@ export const AdminMembers: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {members.length > 0 && (
+            <button
+              onClick={() => {
+                confirmAction({
+                  title: 'Clear All Members from Directory',
+                  message: 'Are you sure you want to remove ALL existing member records? This will delete all member accounts and credentials so you can start completely fresh with manual registrations.',
+                  confirmText: 'Yes, Clear All Members',
+                  cancelText: 'Cancel',
+                  variant: 'danger',
+                  itemDetails: {
+                    label: 'Current Total Records',
+                    value: `${members.length} Member Accounts`,
+                    subValue: 'All existing member data in registry and storage will be erased.'
+                  },
+                  onConfirm: () => {
+                    clearAllMembers();
+                  }
+                });
+              }}
+              className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Remove all member records from the portal"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>Clear All Members</span>
+            </button>
+          )}
+
           <button
             onClick={handleExportCSV}
             className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
@@ -510,10 +591,31 @@ export const AdminMembers: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {filteredMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-10 text-slate-400">
-                    <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                    <p className="font-semibold text-slate-600 text-sm">No members match the filter</p>
-                    <p className="text-xs text-slate-400 mt-0.5">Try adjusting your search criteria or register a new member.</p>
+                  <td colSpan={7} className="text-center py-14 px-4">
+                    <div className="max-w-md mx-auto space-y-3 text-center">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-blue-600 shadow-xs">
+                        <Users className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm font-display">
+                          {members.length === 0 ? 'Member Directory is Empty' : 'No members match the filter'}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                          {members.length === 0 
+                            ? 'All existing data has been removed. You can now add youth members manually with complete credentials (Name, Gmail, Birthday, Age, Address), or youth can apply via Join Organization.'
+                            : 'Try adjusting your search criteria or register a new member manually.'}
+                        </p>
+                      </div>
+                      <div className="pt-2 flex justify-center">
+                        <button
+                          onClick={handleOpenCreate}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>{members.length === 0 ? 'Add First Member Manually' : 'Register New Member'}</span>
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -970,14 +1072,14 @@ export const AdminMembers: React.FC = () => {
       {/* Create / Edit Member Modal */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4 my-6">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 space-y-4 my-6">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 font-display">
-                  {editingMember ? 'Edit Youth Member Profile' : 'Register New Youth Member'}
+                  {editingMember ? 'Edit Youth Member Profile' : 'Register New Youth Member Manually'}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Enter member details. You can assign their Username and Password right after saving.
+                  Enter complete credentials (Name, Gmail, Birthday, Age, Address) for the member registry.
                 </p>
               </div>
               <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
@@ -992,7 +1094,7 @@ export const AdminMembers: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Juan Dela Cruz"
+                  placeholder="e.g. Maria Clara Santos"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
@@ -1001,18 +1103,57 @@ export const AdminMembers: React.FC = () => {
 
               {/* Gmail / Official Email */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Gmail Address (Credentials will be sent here) *</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Gmail Address (Credentials & Notifications) *</label>
                 <input
                   type="email"
                   required
-                  placeholder="e.g. juan.delacruz@gmail.com"
+                  placeholder="e.g. maria.santos@gmail.com"
                   value={formEmail}
                   onChange={(e) => setFormEmail(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
                 />
               </div>
 
+              {/* Birthday & Age */}
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Birthday *</label>
+                  <input
+                    type="date"
+                    required
+                    value={formBirthdate}
+                    onChange={(e) => handleBirthdateChange(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700">Age (Years Old)</label>
+                    <span className="text-[10px] text-blue-600 font-medium">Auto-calculated</span>
+                  </div>
+                  <input
+                    type="number"
+                    min={12}
+                    max={60}
+                    value={formAge}
+                    onChange={(e) => setFormAge(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Address and Barangay */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Address / Street / Purok *</label>
+                  <input
+                    type="text"
+                    value={formAddress}
+                    onChange={(e) => setFormAddress(e.target.value)}
+                    placeholder="e.g. Purok 3, Sitio Riverside"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none"
+                  />
+                </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 mb-1">Barangay (Guimba) *</label>
                   <select
@@ -1025,6 +1166,10 @@ export const AdminMembers: React.FC = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Contact, Gender & Status */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 mb-1">Contact Number</label>
                   <input
@@ -1033,18 +1178,6 @@ export const AdminMembers: React.FC = () => {
                     onChange={(e) => setFormContact(e.target.value)}
                     placeholder="+63 917 000 0000"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Birthdate</label>
-                  <input
-                    type="date"
-                    value={formBirthdate}
-                    onChange={(e) => setFormBirthdate(e.target.value)}
-                    className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                   />
                 </div>
                 <div>
@@ -1096,22 +1229,111 @@ export const AdminMembers: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Address / Purok</label>
-                <input
-                  type="text"
-                  value={formAddress}
-                  onChange={(e) => setFormAddress(e.target.value)}
-                  placeholder="Purok 1, Sitio, Landmark"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                />
-              </div>
+              {/* Direct Credential Assignment Section for New Members */}
+              {!editingMember && (
+                <div className="p-3.5 bg-blue-50/60 border border-blue-100 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={assignCredentialsNow}
+                        onChange={(e) => setAssignCredentialsNow(e.target.checked)}
+                        className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+                        Assign Portal Login Credentials Immediately
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-full font-semibold">
+                      Recommended
+                    </span>
+                  </div>
+
+                  {assignCredentialsNow && (
+                    <div className="space-y-2.5 pt-1 border-t border-blue-100/80">
+                      {/* Username */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-slate-700">Assigned Username</label>
+                          <button
+                            type="button"
+                            onClick={handleAutoGenerateFormUsername}
+                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            Auto-Generate
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="e.g. maria.santos"
+                          value={formUsername}
+                          onChange={(e) => setFormUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Password */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-slate-700">Initial Password</label>
+                          <button
+                            type="button"
+                            onClick={handleSuggestFormPassword}
+                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            Suggest Password
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type={formShowPassword ? 'text' : 'password'}
+                            value={formPassword}
+                            onChange={(e) => setFormPassword(e.target.value)}
+                            placeholder="Set initial password"
+                            className="w-full px-3 py-2 pr-10 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setFormShowPassword(!formShowPassword)}
+                            className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                          >
+                            {formShowPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Send Email Notice */}
+                      <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
+                        <input
+                          type="checkbox"
+                          checked={formSendEmail}
+                          onChange={(e) => setFormSendEmail(e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                        />
+                        <span className="text-[11px] text-slate-600">
+                          Send credentials notice directly to member's Gmail upon registration
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 type="submit"
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors mt-2 shadow-md shadow-blue-500/20 cursor-pointer"
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors mt-2 shadow-md shadow-blue-500/20 cursor-pointer flex items-center justify-center gap-2"
               >
-                {editingMember ? 'Save Member Updates' : 'Save Member & Proceed to Assign Credentials'}
+                <Plus className="w-4 h-4" />
+                <span>
+                  {editingMember 
+                    ? 'Save Member Updates' 
+                    : (assignCredentialsNow && formUsername.trim() 
+                        ? 'Register Member & Save Credentials' 
+                        : 'Register Member Manually')}
+                </span>
               </button>
             </form>
           </div>

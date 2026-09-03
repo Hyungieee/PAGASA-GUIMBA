@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GUIMBA_BARANGAYS } from '../../data/mockData';
 import { PagasaLogo } from './PagasaLogo';
-import { X, Lock, Mail, User, Phone, Shield, ArrowRight, CheckCircle2, Loader2, Sparkles, KeyRound, Eye, EyeOff, Send, Clock, Info, Calendar, MapPin, Hash } from 'lucide-react';
+import { X, Lock, Mail, User, Phone, Shield, ArrowRight, CheckCircle2, Check, Loader2, Sparkles, KeyRound, Eye, EyeOff, Send, Clock, Info, Calendar, MapPin, Hash } from 'lucide-react';
 import { motion } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { calculateAge } from '../../utils/dateUtils';
@@ -17,6 +17,7 @@ export const AuthModal: React.FC = () => {
     registerMemberRequest,
     resetUserPassword,
     loginWithGoogle,
+    loginAsMemberDirectly,
     members
   } = useApp();
 
@@ -207,7 +208,7 @@ export const AuthModal: React.FC = () => {
                 {showForgotModal ? 'Reset Portal Password' :
                   submitFeedback?.phase === 'submitting' ? 'Submitting Registration...' :
                   submitFeedback?.phase === 'existing' ? 'Member Account Found' :
-                  submitFeedback?.phase === 'success' ? 'Request Submitted!' : 
+                  submitFeedback?.phase === 'success' ? 'Registration Complete!' : 
                   authModalMode === 'admin-login' ? 'Administrator Sign In' :
                   authModalMode === 'login' ? 'Member Portal Sign In' : 'Join PAGASA Youth Organization'}
               </h2>
@@ -370,71 +371,62 @@ export const AuthModal: React.FC = () => {
             </div>
           ) : (
             /* Success Screen after new registration */
-            <div className="p-8 text-center space-y-4">
-              <motion.div 
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", damping: 14 }}
-                className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-md shadow-emerald-500/10"
-              >
-                <CheckCircle2 className="w-9 h-9" />
-              </motion.div>
-              <h3 className="text-xl font-bold text-slate-900">Registration Received!</h3>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-bold text-amber-800">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                Status: Pending Administrator Password Assignment
+            <div className="p-6 sm:p-8 text-center space-y-5">
+              {/* Green Checkmark Circle */}
+              <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
+                <Check className="w-7 h-7 stroke-[2.5]" />
               </div>
-              <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
-                Mabuhay, <strong>{submitFeedback.name || submitFeedback.member?.fullName || 'Youth Member'}</strong>! Your registration has been submitted. The organization administrator will review and assign your official credentials.
-              </p>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left text-xs space-y-2 max-w-md mx-auto">
-                <div className="flex items-start gap-2">
-                  <Send className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-slate-700 leading-relaxed">
-                    Your assigned <strong>Username</strong> and <strong>Account Password</strong> will be assigned by the administrator and sent directly to: <strong className="text-blue-700">{submitFeedback.email}</strong>. No temporary password needed.
-                  </p>
-                </div>
-                <div className="space-y-1.5 pt-2 border-t border-slate-200 text-slate-600 text-[11px]">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Full Name:</span>
-                    <strong className="text-slate-800">{submitFeedback.name || submitFeedback.member?.fullName}</strong>
-                  </div>
-                  {submitFeedback.member?.age && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Age & Birthday:</span>
-                      <strong className="text-slate-800">{submitFeedback.member.age} yrs old ({submitFeedback.member.birthdate || 'N/A'})</strong>
-                    </div>
-                  )}
-                  {submitFeedback.member?.address && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Address:</span>
-                      <strong className="text-slate-800 truncate max-w-[200px]">{submitFeedback.member.address}</strong>
-                    </div>
-                  )}
-                  <div className="flex justify-between pt-1 border-t border-slate-100 font-mono">
-                    <span className="text-slate-400 font-sans">Member ID:</span>
-                    <strong className="text-blue-700">{submitFeedback.member?.memberId}</strong>
-                  </div>
-                </div>
+
+              {/* Heading & Subtitle */}
+              <div className="space-y-1.5">
+                <h3 className="text-xl font-bold text-slate-900 font-display">
+                  Member Account Ready!
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 max-w-sm mx-auto leading-relaxed">
+                  Mabuhay! Your youth membership registration is active. Your assigned Member ID is:
+                </p>
               </div>
-              <div className="pt-2 flex gap-3 justify-center">
+
+              {/* Member ID Box */}
+              <div className="inline-block px-8 py-3 bg-blue-50/70 border border-blue-200 rounded-2xl">
+                <span className="font-mono text-lg sm:text-xl font-bold text-blue-700 tracking-wide">
+                  {submitFeedback.member?.memberId || 'PAGASA-2026-0054'}
+                </span>
+              </div>
+
+              {/* Green Callout Card */}
+              <div className="p-4 bg-emerald-50/70 border border-emerald-200/90 rounded-2xl text-left space-y-1">
+                <h4 className="text-xs font-bold text-emerald-950">
+                  Gmail Portal Access Enabled
+                </h4>
+                <p className="text-xs text-emerald-800 leading-relaxed">
+                  You can now sign in using your registered Gmail address or 1-click Google OAuth.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-center gap-3 pt-2">
                 <button
                   onClick={() => {
+                    const mem = submitFeedback.member;
                     setSubmitFeedback(null);
-                    setAuthModalMode('member-login');
+                    setIsAuthModalOpen(false);
+                    if (mem) {
+                      loginAsMemberDirectly(mem);
+                    }
                   }}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-md cursor-pointer"
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all cursor-pointer"
                 >
-                  Go to Sign In
+                  Proceed to Member Portal
                 </button>
                 <button
                   onClick={() => {
                     setIsAuthModalOpen(false);
                     setSubmitFeedback(null);
                   }}
-                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
+                  className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
                 >
-                  Done
+                  Close
                 </button>
               </div>
             </div>
