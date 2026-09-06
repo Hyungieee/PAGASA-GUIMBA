@@ -135,6 +135,27 @@ export function subscribeToMembers(onData: (members: Member[]) => void): Unsubsc
   );
 }
 
+export async function fetchMembersFromFirestore(): Promise<Member[]> {
+  try {
+    const colRef = collection(db, 'members');
+    const snapshot = await getDocs(colRef);
+    const list: Member[] = [];
+    snapshot.forEach((d) => list.push(d.data() as Member));
+    return list;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'members');
+    return [];
+  }
+}
+
+export async function clearAllMembersDocs(memberIds: string[]): Promise<void> {
+  try {
+    await Promise.allSettled(memberIds.map(id => deleteDoc(doc(db, 'members', id))));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'members');
+  }
+}
+
 export async function saveMemberDoc(member: Member): Promise<void> {
   const path = `members/${member.id}`;
   try {

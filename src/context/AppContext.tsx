@@ -41,7 +41,12 @@ import {
 import {
   signInWithGoogle as firebaseGoogleSignIn,
   signOutFirebase,
-  subscribeToAuth
+  subscribeToAuth,
+  subscribeToMembers,
+  saveMemberDoc,
+  deleteMemberDoc,
+  fetchMembersFromFirestore,
+  clearAllMembersDocs
 } from '../firebase/firestoreService';
 import { ConfirmModal, ConfirmModalConfig } from '../components/common/ConfirmModal';
 import { EmailPreviewModal } from '../components/common/EmailPreviewModal';
@@ -206,6 +211,8 @@ interface AppContextType {
   getStorageMetrics: () => { usedBytes: number; formattedSize: string; itemCounts: Record<string, number> };
   
   members: Member[];
+  refreshMembers: () => Promise<Member[]>;
+  isSyncingMembers: boolean;
   addMember: (member: Omit<Member, 'id' | 'memberId' | 'membershipDate' | 'stats'>) => Member;
   updateMember: (id: string, updates: Partial<Member>) => void;
   updateMemberStatus: (id: string, status: MembershipStatus) => void;
@@ -403,6 +410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [members, setMembers] = useState<Member[]>(() => {
     return storageService.loadMembers();
   });
+  const [isSyncingMembers, setIsSyncingMembers] = useState<boolean>(false);
 
   const [events, setEvents] = useState<EventItem[]>(() => {
     return storageService.loadEvents();
@@ -513,7 +521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     storageService.saveAuditLogs(auditLogs);
   }, [auditLogs]);
 
-  // Cross-tab synchronization listener
+  // Cross-tab and local broadcast synchronization listener
   useEffect(() => {
     const handleStorageEvent = (e: StorageEvent) => {
       if (!e.key) return;
@@ -534,8 +542,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
+    const handleCustomStorageUpdate = (e: any) => {
+      if (e.detail?.key === STORAGE_KEYS.MEMBERS && Array.isArray(e.detail?.value)) {
+        setMembers(e.detail.value);
+      }
+    };
+
+    let syncChannel: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        syncChannel = new BroadcastChannel('pagasa_sync_channel');
+        syncChannel.onmessage = (event) => {
+          if (event.data?.key === STORAGE_KEYS.MEMBERS && Array.isArray(event.data?.value)) {
+            setMembers(event.data.value);
+          }
+        };
+      }
+    } catch (_) {}
+
     window.addEventListener('storage', handleStorageEvent);
-    return () => window.removeEventListener('storage', handleStorageEvent);
+    window.addEventListener('pagasa_storage_update', handleCustomStorageUpdate);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageEvent);
+      window.removeEventListener('pagasa_storage_update', handleCustomStorageUpdate);
+      if (syncChannel) syncChannel.close();
+    };
+  }, []);
+
+  // Realtime Cloud Firestore Member Sync
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = subscribeToMembers((cloudMembers) => {
+      if (!active) return;
+      if (cloudMembers && cloudMembers.length > 0) {
+        setMembers(prev => {
+          const map = new Map<string, Member>();
+          cloudMembers.forEach(m => map.set(m.id, m));
+          prev.forEach(m => {
+            if (!map.has(m.id)) {
+              map.set(m.id, m);
+              saveMemberDoc(m).catch(() => {});
+            }
+          });
+          const merged = Array.from(map.values());
+          storageService.saveMembers(merged);
+          return merged;
+        });
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   // Sync Firebase Auth state if active session exists
@@ -976,10 +1036,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           contactNumber: extraDetails?.emergencyContactNumber || existing.emergencyContact?.contactNumber || contactNumber?.trim() || '+63 917 000 0000'
         }
       };
-      const updatedList = [...members];
-      updatedList[existingIndex] = updatedExisting;
+      const updatedList = members.map(m => (m.email || '').toLowerCase().trim() === trimmedEmail ? updatedExisting : m);
       setMembers(updatedList);
       storageService.saveMembers(updatedList);
+      saveMemberDoc(updatedExisting).catch(err => console.warn('Cloud member sync error:', err));
 
       return {
         success: true,
@@ -1037,9 +1097,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    const updatedList = [newMember, ...members];
+    const updatedList = [newMember, ...members.filter(m => m.id !== newMember.id && m.email !== newMember.email)];
     setMembers(updatedList);
     storageService.saveMembers(updatedList);
+    saveMemberDoc(newMember).catch(err => console.warn('Cloud member sync error:', err));
 
     // Audit Log & Notification for Administrator
     logAuditEvent(
@@ -1127,6 +1188,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedList = members.map(m => m.id === target.id ? updatedMember : m);
     setMembers(updatedList);
     storageService.saveMembers(updatedList);
+    saveMemberDoc(updatedMember).catch(err => console.warn('Cloud member sync error:', err));
 
     logAuditEvent(
       'Assigned Portal Password',
@@ -1304,12 +1366,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // 2. Member Portal Login (Authenticates by Username, Email, or MemberID)
-    let matchedMember = members.find(m => 
+    const currentPool = members.length > 0 ? members : storageService.loadMembers();
+    let matchedMember = currentPool.find(m => 
       (m.username && m.username.toLowerCase().trim() === inputLower) ||
       (m.email && m.email.toLowerCase().trim() === inputLower) || 
       (m.memberId && m.memberId.toLowerCase().trim() === inputLower) ||
       (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
     );
+
+    if (!matchedMember) {
+      const storageList = storageService.loadMembers();
+      matchedMember = storageList.find(m => 
+        (m.username && m.username.toLowerCase().trim() === inputLower) ||
+        (m.email && m.email.toLowerCase().trim() === inputLower) || 
+        (m.memberId && m.memberId.toLowerCase().trim() === inputLower) ||
+        (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
+      );
+      if (matchedMember) {
+        setMembers(storageList);
+      }
+    }
 
     if (!matchedMember) {
       showToast(
@@ -1435,12 +1511,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Member Attempt
-    let matchedMember = members.find(m => 
+    const currentPool = members.length > 0 ? members : storageService.loadMembers();
+    let matchedMember = currentPool.find(m => 
       (m.username && m.username.toLowerCase().trim() === inputLower) ||
       (m.email && m.email.toLowerCase().trim() === inputLower) || 
       (m.memberId && m.memberId.toLowerCase().trim() === inputLower) ||
       (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
     );
+
+    if (!matchedMember) {
+      const storageList = storageService.loadMembers();
+      matchedMember = storageList.find(m => 
+        (m.username && m.username.toLowerCase().trim() === inputLower) ||
+        (m.email && m.email.toLowerCase().trim() === inputLower) || 
+        (m.memberId && m.memberId.toLowerCase().trim() === inputLower) ||
+        (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
+      );
+      if (matchedMember) {
+        setMembers(storageList);
+      } else {
+        // Fetch from cloud Firestore in case registration occurred in another session
+        const cloudMembers = await fetchMembersFromFirestore();
+        matchedMember = cloudMembers.find(m => 
+          (m.username && m.username.toLowerCase().trim() === inputLower) ||
+          (m.email && m.email.toLowerCase().trim() === inputLower) || 
+          (m.memberId && m.memberId.toLowerCase().trim() === inputLower) ||
+          (m.fullName && m.fullName.toLowerCase().trim() === inputLower)
+        );
+        if (matchedMember) {
+          const merged = [matchedMember, ...members.filter(m => m.id !== matchedMember!.id)];
+          setMembers(merged);
+          storageService.saveMembers(merged);
+        }
+      }
+    }
 
     if (!matchedMember) {
       showToast(
@@ -1682,9 +1786,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         certificatesEarned: 0
       }
     };
-    const updated = [newMember, ...members];
+    const updated = [newMember, ...members.filter(m => m.id !== newMember.id)];
     setMembers(updated);
     storageService.saveMembers(updated);
+    saveMemberDoc(newMember).catch(err => console.warn('Cloud save member failed:', err));
     logAuditEvent('Registered New Member', 'Members', `Added member: ${newMember.fullName} (${memberId}).`);
     addNotification('New Member Application', `${newMember.fullName} from Brgy. ${newMember.barangay} registered.`, 'system');
     showToast('success', 'Registration Completed', `Member ${newMember.fullName} profile created with ID ${memberId}.`);
@@ -1695,7 +1800,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setMembers(prev => {
       const updatedList = prev.map(m => {
         if (m.id === id || m.memberId === id) {
-          return { ...m, ...updates };
+          const updated = { ...m, ...updates };
+          saveMemberDoc(updated).catch(err => console.warn('Cloud save member failed:', err));
+          return updated;
         }
         return m;
       });
@@ -1721,12 +1828,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateMemberStatus = (id: string, status: MembershipStatus) => {
-    setMembers(prev => prev.map(m => {
-      if (m.id === id) {
-        return { ...m, membershipStatus: status };
-      }
-      return m;
-    }));
+    setMembers(prev => {
+      const updatedList = prev.map(m => {
+        if (m.id === id) {
+          const updated = { ...m, membershipStatus: status };
+          saveMemberDoc(updated).catch(err => console.warn('Cloud save member failed:', err));
+          return updated;
+        }
+        return m;
+      });
+      storageService.saveMembers(updatedList);
+      return updatedList;
+    });
     const target = members.find(m => m.id === id);
     logAuditEvent(`Changed Member Status to ${status}`, 'Members', `Set status of ${target?.fullName} (${target?.memberId}) to ${status}.`);
     showToast('success', 'Status Updated', `${target?.fullName || 'Member'} status is now ${status}.`);
@@ -1734,16 +1847,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteMember = (id: string) => {
     const target = members.find(m => m.id === id);
-    setMembers(prev => prev.filter(m => m.id !== id));
+    setMembers(prev => {
+      const updated = prev.filter(m => m.id !== id);
+      storageService.saveMembers(updated);
+      return updated;
+    });
+    deleteMemberDoc(id).catch(err => console.warn('Cloud delete member failed:', err));
     logAuditEvent('Deleted Member Record', 'Members', `Removed member ${target?.fullName} (${target?.memberId}).`);
     showToast('info', 'Member Deleted', 'Member has been removed from registry.');
   };
 
   const clearAllMembers = () => {
+    const currentIds = members.map(m => m.id);
     setMembers([]);
     storageService.saveMembers([]);
+    clearAllMembersDocs(currentIds).catch(err => console.warn('Cloud clear members failed:', err));
     logAuditEvent('Cleared Member Directory', 'Members', 'Administrator emptied all member records from the registry.');
     showToast('info', 'Member Directory Emptied', 'All existing member records have been removed. You can now add members manually.');
+  };
+
+  const refreshMembers = async (): Promise<Member[]> => {
+    setIsSyncingMembers(true);
+    try {
+      const local = storageService.loadMembers();
+      const cloud = await fetchMembersFromFirestore();
+      
+      const map = new Map<string, Member>();
+      cloud.forEach(m => map.set(m.id, m));
+      local.forEach(m => {
+        if (!map.has(m.id)) {
+          map.set(m.id, m);
+          saveMemberDoc(m).catch(() => {});
+        }
+      });
+      members.forEach(m => {
+        if (!map.has(m.id)) {
+          map.set(m.id, m);
+          saveMemberDoc(m).catch(() => {});
+        }
+      });
+
+      const merged = Array.from(map.values());
+      setMembers(merged);
+      storageService.saveMembers(merged);
+      showToast('success', 'Directory Synchronized', `Fetched and updated ${merged.length} youth member records with active credentials.`);
+      return merged;
+    } catch (err) {
+      const local = storageService.loadMembers();
+      setMembers(local);
+      showToast('info', 'Directory Refreshed', `Loaded ${local.length} member records from local storage.`);
+      return local;
+    } finally {
+      setIsSyncingMembers(false);
+    }
   };
 
   // Event Management
@@ -2229,6 +2385,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         restoreStateSnapshot,
         getStorageMetrics,
         members,
+        refreshMembers,
+        isSyncingMembers,
         addMember,
         updateMember,
         updateMemberStatus,

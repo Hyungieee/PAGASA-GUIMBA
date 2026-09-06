@@ -141,6 +141,16 @@ class LocalStorageService {
     try {
       const serialized = JSON.stringify(value);
       window.localStorage.setItem(key, serialized);
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('pagasa_storage_update', { detail: { key, value } }));
+        }
+        if (typeof BroadcastChannel !== 'undefined') {
+          const ch = new BroadcastChannel('pagasa_sync_channel');
+          ch.postMessage({ key, value, timestamp: Date.now() });
+          ch.close();
+        }
+      } catch (_) {}
       return true;
     } catch (err) {
       console.error(`[LocalStorageService] Failed to set key "${key}". Storage quota may be exceeded.`, err);
