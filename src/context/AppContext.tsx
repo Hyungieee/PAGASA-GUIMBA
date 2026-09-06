@@ -102,6 +102,8 @@ export type ActivePage =
   | 'announcements'
   | 'gallery'
   | 'join'
+  | 'directory'
+  | 'login'
   | 'member-dashboard'
   | 'member-profile'
   | 'member-qr'
@@ -187,6 +189,8 @@ interface AppContextType {
     }
   ) => Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }>;
   assignMemberCredentials: (memberId: string, username: string, temporaryPassword: string, sendEmailImmediately?: boolean, requirePasswordChange?: boolean) => Promise<{ success: boolean; emailSent: boolean; error?: string }>;
+  assignMemberPassword: (memberId: string, password: string, activateNow?: boolean) => Promise<{ success: boolean; message?: string }>;
+  toggleMemberActivation: (memberId: string, activate?: boolean) => Promise<{ success: boolean; message?: string }>;
   resendCredentialEmail: (memberId: string) => Promise<{ success: boolean; error?: string }>;
   toggleMemberAccess: (memberId: string, disable: boolean) => void;
   changeMemberPassword: (memberId: string, newPassword: string) => Promise<{ success: boolean }>;
@@ -991,6 +995,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   ): Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }> => {
     const trimmedEmail = email.trim().toLowerCase();
+    
+    // Validate that the Gmail Account is valid (ends with @gmail.com)
+    if (!trimmedEmail || !/^[a-zA-Z0-9._%+-]+@gmail\.com$/i.test(trimmedEmail)) {
+      showToast('error', 'Invalid Gmail Account', 'Please provide a valid Gmail Account ending with @gmail.com.');
+      return {
+        success: false,
+        member: null as any,
+        message: 'Invalid Gmail Account. Please provide a valid @gmail.com address.'
+      };
+    }
+
+    // Check if the Gmail Account is already registered (must be unique)
+    const currentPool = members.length > 0 ? members : storageService.loadMembers();
+    const existingMember = currentPool.find(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
+    if (existingMember) {
+      showToast('error', 'Gmail Already Registered', 'This Gmail Account is already registered in the system.');
+      return {
+        success: false,
+        member: existingMember,
+        isExisting: true,
+        message: 'This Gmail Account is already registered in the system.'
+      };
+    }
+
     const resolvedName = fullName?.trim() || formatNameFromEmail(trimmedEmail);
     const resolvedAge = extraDetails?.age && !isNaN(Number(extraDetails.age)) ? Number(extraDetails.age) : 21;
     const resolvedBirthdate = extraDetails?.birthdate || '2005-01-01';
@@ -1002,55 +1030,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ? (extraDetails.address.includes('Guimba') ? extraDetails.address : `${extraDetails.address}, Brgy. ${barangay || 'Saint John District (Poblacion)'}, Guimba, Nueva Ecija`)
       : `Brgy. ${barangay || 'Saint John District (Poblacion)'}, Guimba, Nueva Ecija`;
 
-    const cleanUsername = extraDetails?.preferredUsername?.trim().toLowerCase() || generateUsername(resolvedName, members.map(x => x.username).filter(Boolean) as string[]);
-    const assignedPassword = (extraDetails?.preferredPassword || 'PagasaMember2026').trim();
-    const hashedPassword = await hashPassword(assignedPassword);
+    const cleanUsername = generateUsername(resolvedName, members.map(x => x.username).filter(Boolean) as string[]);
     const nowIso = new Date().toISOString();
-
-    // Check if already registered
-    const existingIndex = members.findIndex(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
-    if (existingIndex !== -1) {
-      const existing = members[existingIndex];
-      const updatedExisting: Member = {
-        ...existing,
-        fullName: resolvedName || existing.fullName,
-        age: extraDetails?.age ? resolvedAge : existing.age,
-        birthdate: extraDetails?.birthdate || existing.birthdate,
-        gender: extraDetails?.gender || existing.gender,
-        address: extraDetails?.address ? resolvedAddress : existing.address,
-        barangay: barangay || existing.barangay,
-        contactNumber: contactNumber?.trim() || existing.contactNumber,
-        educationalStatus: extraDetails?.educationalStatus || existing.educationalStatus,
-        occupation: extraDetails?.occupation || existing.occupation,
-        committee: extraDetails?.committee || existing.committee,
-        username: existing.username || cleanUsername,
-        portalPassword: assignedPassword || existing.portalPassword || 'PagasaMember2026',
-        passwordHash: hashedPassword || existing.passwordHash,
-        credentialStatus: 'Active',
-        membershipStatus: 'Active',
-        gmailAccessEnabled: true,
-        isAccessDisabled: false,
-        emergencyContact: {
-          name: extraDetails?.emergencyContactName || existing.emergencyContact?.name || 'Family Contact',
-          relationship: extraDetails?.emergencyRelationship || existing.emergencyContact?.relationship || 'Parent / Guardian',
-          contactNumber: extraDetails?.emergencyContactNumber || existing.emergencyContact?.contactNumber || contactNumber?.trim() || '+63 917 000 0000'
-        }
-      };
-      const updatedList = members.map(m => (m.email || '').toLowerCase().trim() === trimmedEmail ? updatedExisting : m);
-      setMembers(updatedList);
-      storageService.saveMembers(updatedList);
-      saveMemberDoc(updatedExisting).catch(err => console.warn('Cloud member sync error:', err));
-
-      return {
-        success: true,
-        member: updatedExisting,
-        isExisting: true,
-        message: `Welcome back, ${resolvedName}! Your member record has been updated with your latest information and your portal credentials are ready.`
-      };
-    }
-
     const memberId = `PAGASA-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    // System creates an account for the member using their Gmail Account.
+    // The Admin will assign/input the member's password through the Admin Dashboard and activate the account.
     const newMember: Member = {
       id: 'mem-' + Date.now(),
       memberId,
@@ -1065,23 +1050,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       educationalStatus: resolvedEducation,
       occupation: resolvedOccupation,
       profilePicture: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(resolvedName)}`,
-      membershipStatus: 'Active',
+      membershipStatus: 'Pending', // Awaiting admin password assignment and activation
       membershipDate: nowIso.split('T')[0],
       organizationPosition: 'Youth Member',
       committee: resolvedCommittee,
       qrCode: `PAGASA:MEMBER:${memberId}:${resolvedName}`,
       registeredEventIds: [],
-      // Credential Management Fields: ready for instant authentication
       username: cleanUsername,
-      portalPassword: assignedPassword,
-      passwordHash: hashedPassword,
-      credentialStatus: 'Active',
-      credentialsAssignedAt: nowIso,
-      emailDeliveryStatus: 'Delivered',
-      emailDeliveryDate: nowIso,
+      portalPassword: '', // Left blank until Admin assigns it
+      passwordHash: '',
+      credentialStatus: 'Pending Credentials',
+      credentialsAssignedAt: undefined,
+      emailDeliveryStatus: 'Pending',
       mustChangePassword: false,
       isAccessDisabled: false,
-      gmailAccessEnabled: true,
+      gmailAccessEnabled: false,
       emergencyContact: {
         name: extraDetails?.emergencyContactName || 'Family Contact',
         relationship: extraDetails?.emergencyRelationship || 'Parent / Guardian',
@@ -1106,26 +1089,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAuditEvent(
       'New Member Registered',
       'Members',
-      `New youth member registered: ${resolvedName} (${trimmedEmail}, Brgy. ${newMember.barangay}, Username: @${cleanUsername})`
+      `New youth member registered: ${resolvedName} (${trimmedEmail}, Brgy. ${newMember.barangay}). Account created with status Pending. Awaiting Admin password assignment.`
     );
 
     addNotification(
       'New Member Registration',
-      `${resolvedName} from Brgy. ${newMember.barangay} registered to PAGASA Guimba. Credentials activated: @${cleanUsername}.`,
+      `${resolvedName} registered with Gmail ${trimmedEmail}. Awaiting password assignment and activation in Admin Dashboard.`,
       'system'
     );
 
     showToast(
       'success',
-      'Registration Active & Ready',
-      `Welcome to PAGASA, ${resolvedName}! Your Member ID is ${memberId} and Username is @${cleanUsername}. You can log in immediately.`
+      'Registration Submitted',
+      'Registration submitted successfully! Your account has been added to the Member Directory. An Administrator will assign your password and activate your account.'
     );
 
     return {
       success: true,
       member: newMember,
-      isExisting: false,
-      message: `Registration complete! Your Member ID is ${memberId} and your username is ${cleanUsername}. You can now log into your Member Portal.`
+      message: 'Registration submitted successfully! Your account has been created. An Administrator will assign your password and activate your account before you can log in.'
     };
   };
 
@@ -1213,6 +1195,126 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       emailSent: emailDeliveryStatus === 'Delivered',
       error: emailDeliveryError
     };
+  };
+
+  const assignMemberPassword = async (
+    memberId: string,
+    password: string,
+    activateNow: boolean = true
+  ): Promise<{ success: boolean; message?: string }> => {
+    const trimmedPassword = (password || '').trim();
+    if (!trimmedPassword || trimmedPassword.length < 6) {
+      showToast('error', 'Invalid Password', 'Password must be at least 6 characters long.');
+      return { success: false, message: 'Password must be at least 6 characters long.' };
+    }
+
+    const target = members.find(m => m.id === memberId || m.memberId === memberId || (m.email && m.email.toLowerCase() === memberId.toLowerCase()));
+    if (!target) {
+      showToast('error', 'Member Not Found', 'Could not locate member record.');
+      return { success: false, message: 'Member record not found.' };
+    }
+
+    const hashedPassword = await hashPassword(trimmedPassword);
+    const assignedDate = new Date().toISOString();
+
+    const updatedMember: Member = {
+      ...target,
+      portalPassword: trimmedPassword,
+      passwordHash: hashedPassword,
+      credentialsAssignedAt: assignedDate,
+      credentialStatus: 'Active',
+      membershipStatus: activateNow ? 'Active' : target.membershipStatus,
+      isAccessDisabled: activateNow ? false : target.isAccessDisabled,
+      gmailAccessEnabled: activateNow ? true : target.gmailAccessEnabled
+    };
+
+    const updatedList = members.map(m => m.id === target.id ? updatedMember : m);
+    setMembers(updatedList);
+    storageService.saveMembers(updatedList);
+    saveMemberDoc(updatedMember).catch(err => console.warn('Cloud member sync error:', err));
+
+    logAuditEvent(
+      'Admin Assigned Password',
+      'Members',
+      `Admin assigned password for member ${target.fullName} (${target.email}). Account status: ${updatedMember.membershipStatus}.`
+    );
+
+    addNotification(
+      'Password Assigned',
+      `Password successfully assigned for ${target.fullName} (${target.email}). Account is ${activateNow ? 'activated and ready for login' : 'saved, pending activation'}.`,
+      'system'
+    );
+
+    showToast(
+      'success',
+      'Password Saved',
+      activateNow
+        ? `Password assigned and account activated for ${target.fullName}. The member can now log in using Gmail and the assigned password.`
+        : `Password assigned for ${target.fullName}. Account is ready to be activated.`
+    );
+
+    return {
+      success: true,
+      message: activateNow
+        ? 'Password saved and account activated successfully.'
+        : 'Password saved successfully.'
+    };
+  };
+
+  const toggleMemberActivation = async (
+    memberId: string,
+    activate?: boolean
+  ): Promise<{ success: boolean; message?: string }> => {
+    const target = members.find(m => m.id === memberId || m.memberId === memberId || (m.email && m.email.toLowerCase() === memberId.toLowerCase()));
+    if (!target) {
+      showToast('error', 'Member Not Found', 'Could not locate member record.');
+      return { success: false, message: 'Member record not found.' };
+    }
+
+    const willActivate = activate !== undefined ? activate : target.membershipStatus !== 'Active';
+
+    if (willActivate) {
+      if (!target.portalPassword || target.portalPassword.trim().length === 0) {
+        showToast('warning', 'Password Required', 'Please assign a password for this member before activating their account.');
+        return {
+          success: false,
+          message: 'Please assign a password for this member before activating the account.'
+        };
+      }
+
+      const updatedMember: Member = {
+        ...target,
+        membershipStatus: 'Active',
+        isAccessDisabled: false,
+        credentialStatus: 'Active',
+        gmailAccessEnabled: true
+      };
+
+      const updatedList = members.map(m => m.id === target.id ? updatedMember : m);
+      setMembers(updatedList);
+      storageService.saveMembers(updatedList);
+      saveMemberDoc(updatedMember).catch(err => console.warn('Cloud sync error:', err));
+
+      logAuditEvent('Activated Member Account', 'Members', `Admin activated account for ${target.fullName} (${target.email}).`);
+      showToast('success', 'Account Activated', `Account for ${target.fullName} is now activated. The member can log in using their Gmail and assigned password.`);
+      return { success: true, message: 'Account activated successfully.' };
+    } else {
+      const updatedMember: Member = {
+        ...target,
+        membershipStatus: 'Inactive',
+        isAccessDisabled: true,
+        gmailAccessEnabled: false
+      };
+
+      const updatedList = members.map(m => m.id === target.id ? updatedMember : m);
+      setMembers(updatedList);
+      storageService.saveMembers(updatedList);
+      saveMemberDoc(updatedMember).catch(err => console.warn('Cloud sync error:', err));
+
+      logAuditEvent('Deactivated Member Account', 'Members', `Admin deactivated account for ${target.fullName} (${target.email}).`);
+      showToast('info', 'Account Deactivated', `Account for ${target.fullName} has been deactivated.`);
+      return { success: true, message: 'Account deactivated.' };
+    }
   };
 
   const resendCredentialEmail = async (memberId: string): Promise<{ success: boolean; error?: string }> => {
@@ -1390,59 +1492,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!matchedMember) {
       showToast(
         'error',
-        'Member Portal Access Denied',
-        `The Username or Gmail "${input}" is not registered. Please register first or contact an administrator to obtain your credentials.`
+        'Login Failed',
+        'Invalid Gmail Account or Password.'
       );
       logAuditEvent('Failed Member Login', 'Members', `Unregistered member login attempt: "${input}"`);
       return false;
     }
 
-    // Auto-activate credentials if member was registered without admin assignment
-    if (matchedMember.credentialStatus === 'Pending Credentials' || (!matchedMember.username && matchedMember.membershipStatus === 'Pending')) {
-      matchedMember = {
-        ...matchedMember,
-        credentialStatus: 'Active',
-        membershipStatus: 'Active',
-        username: matchedMember.username || generateUsername(matchedMember.fullName, members.map(x => x.username).filter(Boolean) as string[]),
-        portalPassword: matchedMember.portalPassword || 'PagasaMember2026',
-        gmailAccessEnabled: true
-      };
-      const updatedList = members.map(m => m.id === matchedMember!.id ? matchedMember! : m);
-      setMembers(updatedList);
-      storageService.saveMembers(updatedList);
-    }
+    // Check if account has been activated by the Administrator
+    const isAccountActivated = 
+      matchedMember.membershipStatus === 'Active' &&
+      !matchedMember.isAccessDisabled &&
+      Boolean(matchedMember.portalPassword && matchedMember.portalPassword.trim().length > 0);
 
-    // Check if Access is Disabled or Suspended
-    if (
-      matchedMember.isAccessDisabled ||
-      matchedMember.credentialStatus === 'Disabled' ||
-      matchedMember.membershipStatus === 'Disabled' ||
-      matchedMember.membershipStatus === 'Suspended' || 
-      matchedMember.membershipStatus === 'Inactive' || 
-      matchedMember.gmailAccessEnabled === false
-    ) {
+    if (!isAccountActivated) {
       showToast(
         'error',
-        'Portal Access Deactivated',
-        'Your member portal account access has been revoked or disabled by an administrator.'
+        'Account Inactive',
+        'Your account is not yet activated. Please contact the Administrator.'
       );
-      logAuditEvent('Blocked Login Attempt', 'Members', `Disabled member attempted login: ${matchedMember.fullName} (${matchedMember.email})`);
+      logAuditEvent('Inactive Login Attempt', 'Members', `Unactivated member attempted login: ${matchedMember.fullName} (${matchedMember.email})`);
       return false;
     }
 
     // Validate Password against admin-assigned portal password
-    const assignedPassword = (matchedMember.portalPassword || 'PagasaMember2026').trim();
+    const assignedPassword = (matchedMember.portalPassword || '').trim();
     const enteredPassword = (pwd || '').trim();
-    const isValidPassword = 
-      enteredPassword === assignedPassword ||
-      enteredPassword.toLowerCase() === assignedPassword.toLowerCase() ||
-      enteredPassword === 'PagasaMember2026' ||
-      enteredPassword.toLowerCase() === 'pagasamember2026' ||
-      enteredPassword === 'pagasa2026' ||
-      enteredPassword.toLowerCase() === 'pagasa2026';
 
-    if (!enteredPassword || !isValidPassword) {
-      showToast('error', 'Incorrect Password', 'The password entered does not match your assigned portal password.');
+    if (!enteredPassword || enteredPassword !== assignedPassword) {
+      showToast('error', 'Login Failed', 'Invalid Gmail Account or Password.');
       logAuditEvent('Failed Password Login', 'Members', `Incorrect password attempt for member: ${matchedMember.fullName} (${matchedMember.email})`);
       return false;
     }
@@ -1549,59 +1627,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!matchedMember) {
       showToast(
         'error',
-        'Member Portal Access Denied',
-        `The account "${input}" is not registered. Please register first or contact an admin.`
+        'Login Failed',
+        'Invalid Gmail Account or Password.'
       );
       return {
         success: false,
-        message: `Access Denied: The account "${input}" is not registered in the Member Directory.`
+        message: 'Invalid Gmail Account or Password.'
       };
     }
 
-    if (matchedMember.credentialStatus === 'Pending Credentials' || (!matchedMember.username && matchedMember.membershipStatus === 'Pending')) {
-      matchedMember = {
-        ...matchedMember,
-        credentialStatus: 'Active',
-        membershipStatus: 'Active',
-        username: matchedMember.username || generateUsername(matchedMember.fullName, members.map(x => x.username).filter(Boolean) as string[]),
-        portalPassword: matchedMember.portalPassword || 'PagasaMember2026',
-        gmailAccessEnabled: true
-      };
-      const updatedList = members.map(m => m.id === matchedMember!.id ? matchedMember! : m);
-      setMembers(updatedList);
-      storageService.saveMembers(updatedList);
-    }
+    // Check if account has been activated by Administrator
+    const isAccountActivated = 
+      matchedMember.membershipStatus === 'Active' &&
+      !matchedMember.isAccessDisabled &&
+      Boolean(matchedMember.portalPassword && matchedMember.portalPassword.trim().length > 0);
 
-    if (
-      matchedMember.isAccessDisabled ||
-      matchedMember.credentialStatus === 'Disabled' ||
-      matchedMember.membershipStatus === 'Disabled' ||
-      matchedMember.membershipStatus === 'Suspended' || 
-      matchedMember.membershipStatus === 'Inactive' || 
-      matchedMember.gmailAccessEnabled === false
-    ) {
-      showToast('error', 'Member Portal Access Deactivated', 'Your member portal access is deactivated or suspended.');
+    if (!isAccountActivated) {
+      showToast(
+        'error',
+        'Account Inactive',
+        'Your account is not yet activated. Please contact the Administrator.'
+      );
       return {
         success: false,
-        message: 'Portal Access Disabled: Your member account has been deactivated by an administrator.'
+        message: 'Your account is not yet activated. Please contact the Administrator.'
       };
     }
 
-    const assignedPassword = (matchedMember.portalPassword || 'PagasaMember2026').trim();
+    const assignedPassword = (matchedMember.portalPassword || '').trim();
     const enteredPassword = (pwd || '').trim();
-    const isValidPassword = 
-      enteredPassword === assignedPassword ||
-      enteredPassword.toLowerCase() === assignedPassword.toLowerCase() ||
-      enteredPassword === 'PagasaMember2026' ||
-      enteredPassword.toLowerCase() === 'pagasamember2026' ||
-      enteredPassword === 'pagasa2026' ||
-      enteredPassword.toLowerCase() === 'pagasa2026';
 
-    if (!enteredPassword || !isValidPassword) {
-      showToast('error', 'Incorrect Password', 'The password entered does not match your assigned portal password.');
+    if (!enteredPassword || enteredPassword !== assignedPassword) {
+      showToast('error', 'Login Failed', 'Invalid Gmail Account or Password.');
       return {
         success: false,
-        message: 'Incorrect Password: The password does not match the portal password assigned by the administrator.'
+        message: 'Invalid Gmail Account or Password.'
       };
     }
 
@@ -2394,6 +2454,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearAllMembers,
         registerMemberRequest,
         assignMemberCredentials,
+        assignMemberPassword,
+        toggleMemberActivation,
         resendCredentialEmail,
         toggleMemberAccess,
         changeMemberPassword,

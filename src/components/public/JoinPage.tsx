@@ -110,12 +110,31 @@ export const JoinPage: React.FC = () => {
     e.preventDefault();
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedName = fullName.trim();
-    if (!trimmedEmail) {
-      setErrorMessage('Please enter a valid Gmail / Email address.');
-      return;
-    }
+    const trimmedContact = contactNumber.trim();
+    const trimmedAddress = address.trim();
+
     if (!trimmedName) {
       setErrorMessage('Please enter your Full Name.');
+      return;
+    }
+    if (!trimmedAddress) {
+      setErrorMessage('Please enter your Complete Address.');
+      return;
+    }
+    if (!birthday) {
+      setErrorMessage('Please provide your Birthday.');
+      return;
+    }
+    if (!age || isNaN(parseInt(age, 10)) || parseInt(age, 10) < 1) {
+      setErrorMessage('Please enter a valid Age.');
+      return;
+    }
+    if (!trimmedEmail || !/^[a-zA-Z0-9._%+-]+@gmail\.com$/i.test(trimmedEmail)) {
+      setErrorMessage('Please enter a valid Gmail Account (ending with @gmail.com).');
+      return;
+    }
+    if (!trimmedContact) {
+      setErrorMessage('Please enter your Cellphone Number.');
       return;
     }
 
@@ -123,15 +142,15 @@ export const JoinPage: React.FC = () => {
     setErrorMessage(null);
 
     const parsedAge = parseInt(age, 10) || calculateAge(birthday);
-    const fullAddress = address.trim()
-      ? `${address.trim()}, Brgy. ${barangay}, Guimba, Nueva Ecija`
-      : `Brgy. ${barangay}, Guimba, Nueva Ecija`;
+    const fullAddress = trimmedAddress.includes('Guimba')
+      ? trimmedAddress
+      : `${trimmedAddress}, Brgy. ${barangay}, Guimba, Nueva Ecija`;
 
     try {
       const res = await registerMemberRequest(
         trimmedEmail,
         trimmedName,
-        contactNumber.trim() || undefined,
+        trimmedContact,
         barangay,
         {
           age: parsedAge,
@@ -141,7 +160,6 @@ export const JoinPage: React.FC = () => {
           educationalStatus: educationalStatus as any,
           occupation: occupation.trim() || 'Youth Volunteer',
           committee: committee,
-          preferredPassword: preferredPassword.trim() || 'PagasaMember2026',
           emergencyContactName: emergencyContactName.trim() || undefined,
           emergencyContactNumber: emergencyContactNumber.trim() || undefined
         }
@@ -163,33 +181,14 @@ export const JoinPage: React.FC = () => {
           occupation: res.member.occupation,
           committee: res.member.committee,
           username: res.member.username,
-          portalPassword: res.member.portalPassword,
-          isExisting: res.isExisting || false
+          portalPassword: '',
+          isExisting: false
         });
         try {
           confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
         } catch (_) {}
-      } else if (res.isExisting && res.member) {
-        setRegisteredMemberRecord(res.member);
-        setSuccessModalOpen(true);
-        setSubmittedData({
-          memberId: res.member.memberId,
-          email: res.member.email,
-          fullName: res.member.fullName,
-          age: res.member.age,
-          address: res.member.address,
-          birthdate: res.member.birthdate,
-          barangay: res.member.barangay,
-          gender: res.member.gender,
-          educationalStatus: res.member.educationalStatus,
-          occupation: res.member.occupation,
-          committee: res.member.committee,
-          username: res.member.username,
-          portalPassword: res.member.portalPassword,
-          isExisting: true
-        });
       } else {
-        setErrorMessage(res.message || 'Unable to submit registration request. Please try again.');
+        setErrorMessage(res.message || 'Unable to submit registration. Please try again.');
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'An error occurred during registration.');
@@ -635,35 +634,14 @@ export const JoinPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Portal Password Setup */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-slate-700">
-                        Create Portal Password <span className="text-red-500">*</span>
-                      </label>
-                      <span className="text-[11px] text-blue-600 font-mono">Default: PagasaMember2026</span>
+                  {/* Admin Password Assignment Notice */}
+                  <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl space-y-1 text-xs text-blue-950">
+                    <div className="flex items-center gap-2 font-bold text-blue-900">
+                      <Lock className="w-4 h-4 text-blue-600" />
+                      <span>Account Password Assignment</span>
                     </div>
-                    <div className="relative">
-                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        value={preferredPassword}
-                        onChange={(e) => setPreferredPassword(e.target.value)}
-                        placeholder="Enter password for portal login"
-                        className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
-                        title={showPassword ? "Hide password" : "Show password"}
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      You will use this password together with your Gmail or assigned username to access the Member Portal.
+                    <p className="text-blue-800 leading-relaxed">
+                      Your password will be assigned and inputted by an Administrator through the Admin Dashboard. Once the Administrator assigns your password and activates your account, you will be able to log in using your <strong>Gmail Account</strong> and your <strong>Admin-assigned password</strong>.
                     </p>
                   </div>
 
@@ -695,25 +673,25 @@ export const JoinPage: React.FC = () => {
                 <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-950 leading-relaxed">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                   <span>
-                    Your profile will be recorded instantly in the official Guimba Member Directory. Upon submission, you will receive an official <strong>Member ID</strong> and immediate access to your Member Portal!
+                    When you click <strong>Submit Registration</strong>, your information will be automatically saved and your profile will immediately appear in the Member Directory for Administrator review and password assignment.
                   </span>
                 </div>
 
-                {/* Submit Member Registration Button */}
+                {/* Submit Registration Button */}
                 <button
                   type="submit"
-                  disabled={isSubmitting || !email.trim() || !fullName.trim()}
+                  disabled={isSubmitting || !email.trim() || !fullName.trim() || !address.trim() || !contactNumber.trim() || !birthday}
                   className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Registering Member...</span>
+                      <span>Submitting Registration...</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Complete Youth Member Registration</span>
+                      <span>Submit Registration</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}

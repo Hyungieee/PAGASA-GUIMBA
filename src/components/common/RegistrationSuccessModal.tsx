@@ -72,10 +72,10 @@ export const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> =
             {/* Heading & Subtitle */}
             <div className="space-y-1.5">
               <h3 className="text-xl font-bold text-slate-900 font-display">
-                Member Account Ready!
+                Registration Submitted!
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 max-w-sm mx-auto leading-relaxed">
-                Mabuhay! Your youth membership registration is active. Your official credentials are:
+                Mabuhay! Your registration information has been successfully saved and added to the Member Directory.
               </p>
             </div>
 
@@ -87,32 +87,22 @@ export const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> =
                   {memberId || 'PAGASA-2026-0001'}
                 </span>
               </div>
-              {username && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-sans">Portal Username:</span>
-                  <span className="font-bold text-slate-900 bg-white px-2.5 py-0.5 rounded border border-slate-200">
-                    @{username}
-                  </span>
-                </div>
-              )}
-              {password && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-sans">Portal Password:</span>
-                  <span className="font-bold text-emerald-700 bg-white px-2.5 py-0.5 rounded border border-emerald-200">
-                    {password}
-                  </span>
-                </div>
-              )}
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-sans">Account Status:</span>
+                <span className="font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded border border-amber-200">
+                  Pending Admin Activation
+                </span>
+              </div>
             </div>
 
-            {/* Green Callout Card */}
-            <div className="p-4 bg-emerald-50/70 border border-emerald-200/90 rounded-2xl text-left space-y-1">
-              <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Instant Portal Authentication Enabled</span>
+            {/* Workflow Callout Card */}
+            <div className="p-4 bg-amber-50/80 border border-amber-200/90 rounded-2xl text-left space-y-1.5 text-xs text-amber-950">
+              <h4 className="font-bold flex items-center gap-1.5 text-amber-900">
+                <Check className="w-4 h-4 text-amber-600" />
+                <span>Next Step: Admin Password Assignment</span>
               </h4>
-              <p className="text-xs text-emerald-800 leading-relaxed">
-                You can immediately enter the Member Portal with 1-click below, or log in anytime using your registered Gmail, Username, or Google Account.
+              <p className="leading-relaxed text-amber-800">
+                The Administrator will review your registration, assign/input your account password, and activate your account. Once activated, you can log in using your <strong>Gmail Account</strong> and the <strong>Password assigned by the Admin</strong>.
               </p>
             </div>
 
@@ -122,7 +112,7 @@ export const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> =
                 onClick={onProceed}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all cursor-pointer flex items-center gap-2"
               >
-                <span>Proceed to Member Portal</span>
+                <span>Go to Member Login</span>
               </button>
               <button
                 onClick={onClose}

@@ -56,6 +56,8 @@ export const AdminMembers: React.FC = () => {
     addToast,
     confirmAction,
     assignMemberCredentials,
+    assignMemberPassword,
+    toggleMemberActivation,
     resendCredentialEmail,
     toggleMemberAccess,
     openEmailPreview
@@ -74,11 +76,12 @@ export const AdminMembers: React.FC = () => {
     selectedMemberId ? members.find(m => m.id === selectedMemberId) || null : null
   );
 
-  // Credential Assignment Modal State
+  // Credential / Password Assignment Modal State
   const [credentialModalMember, setCredentialModalMember] = useState<Member | null>(null);
   const [assignUsername, setAssignUsername] = useState('');
   const [assignPassword, setAssignPassword] = useState('');
   const [showAssignPassword, setShowAssignPassword] = useState(false);
+  const [activateAccountOnAssign, setActivateAccountOnAssign] = useState(true);
   const [sendEmailImmediately, setSendEmailImmediately] = useState(true);
   const [requirePasswordChange, setRequirePasswordChange] = useState(true);
   const [isAssigning, setIsAssigning] = useState(false);
@@ -136,11 +139,12 @@ export const AdminMembers: React.FC = () => {
   const handleOpenAssignModal = (m: Member) => {
     setCredentialModalMember(m);
     const initialUsername = m.username || generateUsername(m.fullName, members.map(x => x.username).filter(Boolean) as string[]);
-    // Always use the member's current assigned password if present, or default PagasaMember2026
+    // Use the member's current assigned password if present, or default PagasaMember2026
     const initialPassword = m.portalPassword || 'PagasaMember2026';
     setAssignUsername(initialUsername);
     setAssignPassword(initialPassword);
     setShowAssignPassword(true);
+    setActivateAccountOnAssign(true);
     setSendEmailImmediately(true);
     setRequirePasswordChange(false);
   };
@@ -159,31 +163,39 @@ export const AdminMembers: React.FC = () => {
 
   const handleCopyCredentials = (m: Member) => {
     const pwd = m.portalPassword || 'PagasaMember2026';
-    const text = `PAGASA Guimba Member Portal Credentials\nName: ${m.fullName}\nMember ID: ${m.memberId}\nUsername: ${m.username || m.email}\nPassword: ${pwd}\nPortal URL: ${window.location.origin}`;
+    const text = `PAGASA Guimba Member Portal Credentials\nName: ${m.fullName}\nMember ID: ${m.memberId}\nGmail: ${m.email}\nUsername: ${m.username || m.email}\nPassword: ${pwd}\nStatus: ${m.membershipStatus}\nPortal URL: ${window.location.origin}`;
     navigator.clipboard.writeText(text);
     addToast(`Credentials for ${m.fullName} copied to clipboard!`, 'success');
   };
 
   const handleCopyModalCredentials = () => {
     if (!credentialModalMember) return;
-    const text = `PAGASA Guimba Member Portal Credentials\nName: ${credentialModalMember.fullName}\nMember ID: ${credentialModalMember.memberId}\nUsername: ${assignUsername}\nPassword: ${assignPassword}\nPortal URL: ${window.location.origin}`;
+    const text = `PAGASA Guimba Member Portal Credentials\nName: ${credentialModalMember.fullName}\nMember ID: ${credentialModalMember.memberId}\nGmail: ${credentialModalMember.email}\nPassword: ${assignPassword}\nStatus: ${activateAccountOnAssign ? 'Active' : 'Pending Activation'}\nPortal URL: ${window.location.origin}`;
     navigator.clipboard.writeText(text);
     addToast('Credentials copied to clipboard!', 'success');
   };
 
   const handleSaveAssignedCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!credentialModalMember || !assignUsername.trim() || !assignPassword.trim()) return;
+    if (!credentialModalMember || !assignPassword.trim()) return;
 
     setIsAssigning(true);
     try {
-      const res = await assignMemberCredentials(
+      const res = await assignMemberPassword(
         credentialModalMember.id,
-        assignUsername.trim(),
         assignPassword.trim(),
-        sendEmailImmediately,
-        false
+        activateAccountOnAssign
       );
+
+      if (assignUsername.trim()) {
+        await assignMemberCredentials(
+          credentialModalMember.id,
+          assignUsername.trim(),
+          assignPassword.trim(),
+          sendEmailImmediately,
+          false
+        );
+      }
 
       if (res.success) {
         setCredentialModalMember(null);
@@ -855,22 +867,48 @@ export const AdminMembers: React.FC = () => {
                         <button
                           onClick={() => setViewingMember(m)}
                           className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                          title="View Digital QR Pass"
+                          title="View Complete Member Profile & QR Pass"
                         >
                           <QrCode className="w-4 h-4" />
                         </button>
 
-                        {/* Toggle Access Disabled */}
+                        {/* Direct Activate / Deactivate Account */}
                         <button
-                          onClick={() => toggleMemberAccess(m.id)}
+                          onClick={() => {
+                            if (m.membershipStatus === 'Active' && !m.isAccessDisabled) {
+                              confirmAction({
+                                title: 'Deactivate Member Account',
+                                message: `Are you sure you want to deactivate ${m.fullName}'s account? The member will not be able to log in until an Administrator reactivates their account.`,
+                                confirmText: 'Deactivate Account',
+                                cancelText: 'Cancel',
+                                variant: 'warning',
+                                onConfirm: () => toggleMemberActivation(m.id, false)
+                              });
+                            } else {
+                              if (!m.portalPassword) {
+                                addToast('warning', 'Password Needed', 'Please assign a password first before activating.');
+                                handleOpenAssignModal(m);
+                              } else {
+                                toggleMemberActivation(m.id, true);
+                              }
+                            }
+                          }}
                           className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                            m.isAccessDisabled 
+                            m.membershipStatus === 'Active' && !m.isAccessDisabled 
                               ? 'text-emerald-600 hover:bg-emerald-50' 
-                              : 'text-amber-600 hover:bg-amber-50'
+                              : 'text-amber-700 hover:bg-amber-100 bg-amber-50 border border-amber-200'
                           }`}
-                          title={m.isAccessDisabled ? "Enable Portal Access" : "Temporarily Disable Portal Access"}
+                          title={
+                            m.membershipStatus === 'Active' && !m.isAccessDisabled 
+                              ? "Account Active (Click to Deactivate)" 
+                              : "Account Inactive / Pending (Click to Activate)"
+                          }
                         >
-                          <UserX className="w-4 h-4" />
+                          {m.membershipStatus === 'Active' && !m.isAccessDisabled ? (
+                            <CheckCircle2 className="w-4 h-4" />
+                          ) : (
+                            <UserCheck className="w-4 h-4" />
+                          )}
                         </button>
 
                         {/* Edit Member Info */}
@@ -1045,32 +1083,52 @@ export const AdminMembers: React.FC = () => {
               </div>
 
               {/* Options */}
-              <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl space-y-2 text-xs">
-                <label className="flex items-start gap-2 text-blue-950 font-medium cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={sendEmailImmediately}
-                    onChange={(e) => setSendEmailImmediately(e.target.checked)}
-                    className="rounded text-blue-600 mt-0.5"
-                  />
-                  <span>
-                    <strong>Send credentials email immediately</strong> to <span className="underline">{credentialModalMember.email}</span>
-                  </span>
-                </label>
+              <div className="space-y-2">
+                {/* Activate Account Checkbox */}
+                <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-xs">
+                  <label className="flex items-start gap-2.5 text-emerald-950 font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={activateAccountOnAssign}
+                      onChange={(e) => setActivateAccountOnAssign(e.target.checked)}
+                      className="rounded text-emerald-600 mt-0.5"
+                    />
+                    <div>
+                      <strong className="block text-emerald-900">Activate Member Account Now</strong>
+                      <span className="text-[11px] text-emerald-700 block mt-0.5">
+                        Immediately enables member login with their Gmail ({credentialModalMember.email}) and this assigned password.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl space-y-2 text-xs">
+                  <label className="flex items-start gap-2 text-blue-950 font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sendEmailImmediately}
+                      onChange={(e) => setSendEmailImmediately(e.target.checked)}
+                      className="rounded text-blue-600 mt-0.5"
+                    />
+                    <span>
+                      <strong>Send credentials notification</strong> to <span className="underline">{credentialModalMember.email}</span>
+                    </span>
+                  </label>
+                </div>
               </div>
 
               <div className="flex gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={isAssigning || !assignUsername.trim() || !assignPassword.trim()}
+                  disabled={isAssigning || !assignPassword.trim()}
                   className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {isAssigning ? (
-                    <span>Assigning & Sending Email...</span>
+                    <span>Saving & Assigning...</span>
                   ) : (
                     <>
-                      <Send className="w-4 h-4" />
-                      <span>Save & Dispatch Credentials</span>
+                      <KeyRound className="w-4 h-4" />
+                      <span>{activateAccountOnAssign ? 'Save Password & Activate Account' : 'Save Password (Keep Inactive)'}</span>
                     </>
                   )}
                 </button>
@@ -1125,110 +1183,145 @@ export const AdminMembers: React.FC = () => {
               </div>
             </div>
 
-            {/* Profile Grid Details */}
+            {/* Profile Grid Details with 8 Required Attributes */}
             <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <div>
-                <span className="text-slate-400 block text-[10px]">Gender & Age:</span>
+              <div className="col-span-2 sm:col-span-1">
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Full Name</span>
+                <span className="font-bold text-slate-900">{viewingMember.fullName}</span>
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Gmail Account</span>
+                <span className="font-semibold text-blue-700 font-mono">{viewingMember.email}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Complete Address</span>
                 <span className="font-semibold text-slate-800">
-                  {viewingMember.gender || 'Not specified'} • {viewingMember.age ? `${viewingMember.age} years old` : 'Age N/A'}
+                  {viewingMember.address 
+                    ? `${viewingMember.address}, Brgy. ${viewingMember.barangay}, Guimba, Nueva Ecija` 
+                    : `Brgy. ${viewingMember.barangay}, Guimba, Nueva Ecija`}
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px]">Birthday:</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Birthday</span>
                 <span className="font-semibold text-slate-800 font-mono">
                   {viewingMember.birthdate || 'Not specified'}
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px]">Barangay & Location:</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Age</span>
                 <span className="font-semibold text-slate-800">
-                  Brgy. {viewingMember.barangay}, Guimba
+                  {viewingMember.age ? `${viewingMember.age} years old` : 'Not specified'}
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px]">Contact Mobile:</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Cellphone Number</span>
                 <span className="font-semibold text-slate-800 font-mono">
                   {viewingMember.contactNumber || 'None provided'}
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px]">Education:</span>
-                <span className="font-semibold text-slate-800">
-                  {viewingMember.educationalStatus || 'College / University'}
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Registration Date</span>
+                <span className="font-semibold text-slate-800 font-mono">
+                  {viewingMember.joinDate || 'Recent'}
                 </span>
               </div>
-              <div>
-                <span className="text-slate-400 block text-[10px]">Occupation / Role:</span>
-                <span className="font-semibold text-slate-800">
-                  {viewingMember.occupation || 'Youth Volunteer'}
-                </span>
-              </div>
-              <div className="col-span-2">
-                <span className="text-slate-400 block text-[10px]">Committee / Interest:</span>
-                <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 inline-block mt-0.5">
-                  {viewingMember.committee || 'General Youth Volunteer'}
-                </span>
-              </div>
-              {viewingMember.emergencyContact && (
-                <div className="col-span-2 pt-1 border-t border-slate-200/60">
-                  <span className="text-slate-400 block text-[10px]">Emergency Contact:</span>
-                  <span className="font-semibold text-slate-700">
-                    {viewingMember.emergencyContact.name} ({viewingMember.emergencyContact.relationship || 'Guardian'}) - {viewingMember.emergencyContact.contactNumber || 'N/A'}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Credential Status Box */}
-            <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl space-y-1.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-blue-950 flex items-center gap-1.5">
-                  <KeyRound className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Portal Credentials</span>
-                </span>
-                <span className="text-[10px] font-mono text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-100">
-                  Status: {viewingMember.credentialStatus || 'Active'}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 font-mono text-[11px] pt-1">
+              <div className="col-span-2 pt-1 border-t border-slate-200/60 flex items-center justify-between">
                 <div>
-                  <span className="text-slate-500 font-sans text-[10px] block">Portal Username:</span>
-                  <span className="font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 inline-block">
-                    @{viewingMember.username || viewingMember.email.split('@')[0]}
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Account Status</span>
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold mt-0.5 ${
+                    viewingMember.membershipStatus === 'Active' && !viewingMember.isAccessDisabled
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {viewingMember.membershipStatus === 'Active' && !viewingMember.isAccessDisabled
+                      ? 'Active (Login Enabled)'
+                      : 'Pending Activation (Login Disabled)'}
                   </span>
                 </div>
-                <div>
-                  <span className="text-slate-500 font-sans text-[10px] block">Password:</span>
-                  <span className="font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200 inline-block">
-                    {viewingMember.portalPassword || 'PagasaMember2026'}
+                <div className="text-right">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Assigned Password</span>
+                  <span className="font-mono font-bold text-xs text-slate-800">
+                    {viewingMember.portalPassword ? viewingMember.portalPassword : 'None (Unassigned)'}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* QR Pass */}
-            <div className="flex items-center justify-center p-3 bg-slate-50 border border-slate-200 rounded-2xl">
-              <div className="text-center space-y-1">
-                <QRCodeSVG value={viewingMember.qrCode || viewingMember.memberId} size={110} className="mx-auto" />
-                <span className="text-[10px] font-mono text-slate-400 block">Digital Verification QR</span>
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-1">
+            {/* Quick Admin Actions in Modal */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
               <button
+                type="button"
                 onClick={() => {
-                  handleTestLoginAsMember(viewingMember);
+                  const target = viewingMember;
+                  setViewingMember(null);
+                  handleOpenAssignModal(target);
+                }}
+                className="py-2.5 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>Assign / Change Password</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (viewingMember.membershipStatus === 'Active' && !viewingMember.isAccessDisabled) {
+                    await toggleMemberActivation(viewingMember.id, false);
+                  } else {
+                    if (!viewingMember.portalPassword) {
+                      addToast('warning', 'Password Required', 'Please assign a password first before activating.');
+                      const target = viewingMember;
+                      setViewingMember(null);
+                      handleOpenAssignModal(target);
+                      return;
+                    }
+                    await toggleMemberActivation(viewingMember.id, true);
+                  }
                   setViewingMember(null);
                 }}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-blue-500/20"
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs ${
+                  viewingMember.membershipStatus === 'Active' && !viewingMember.isAccessDisabled
+                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-800'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                }`}
               >
-                <LogIn className="w-4 h-4" />
-                <span>Open {viewingMember.fullName}'s Portal</span>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>
+                  {viewingMember.membershipStatus === 'Active' && !viewingMember.isAccessDisabled
+                    ? 'Deactivate Account'
+                    : 'Activate Account'}
+                </span>
               </button>
-              
+            </div>
+
+            <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
               <button
+                type="button"
+                onClick={() => {
+                  const target = viewingMember;
+                  setViewingMember(null);
+                  confirmAction({
+                    title: 'Delete Member Account',
+                    message: `Are you sure you want to permanently delete the account of ${target.fullName}?`,
+                    confirmText: 'Delete Member',
+                    cancelText: 'Cancel',
+                    variant: 'danger',
+                    onConfirm: () => {
+                      deleteMember(target.id);
+                      addToast(`Member ${target.fullName} has been deleted.`, 'info');
+                    }
+                  });
+                }}
+                className="py-2.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Member</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setViewingMember(null)}
-                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold cursor-pointer"
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold cursor-pointer"
               >
                 Close
               </button>

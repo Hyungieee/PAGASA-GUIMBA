@@ -60,7 +60,8 @@ export const Navbar: React.FC = () => {
     { label: 'Projects', page: 'projects', icon: Layers },
     { label: 'Activities', page: 'activities', icon: Award },
     { label: 'Announcements', page: 'announcements', icon: Megaphone },
-    { label: 'Gallery', page: 'gallery', icon: ImageIcon }
+    { label: 'Gallery', page: 'gallery', icon: ImageIcon },
+    { label: 'Directory', page: 'directory', icon: Users }
   ];
 
   return (
