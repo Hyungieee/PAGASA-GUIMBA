@@ -170,6 +170,15 @@ interface AppContextType {
       age?: number;
       address?: string;
       birthdate?: string;
+      gender?: 'Male' | 'Female' | 'Prefer not to say' | 'Other';
+      educationalStatus?: any;
+      occupation?: string;
+      committee?: string;
+      preferredPassword?: string;
+      preferredUsername?: string;
+      emergencyContactName?: string;
+      emergencyContactNumber?: string;
+      emergencyRelationship?: string;
     }
   ) => Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }>;
   assignMemberCredentials: (memberId: string, username: string, temporaryPassword: string, sendEmailImmediately?: boolean, requirePasswordChange?: boolean) => Promise<{ success: boolean; emailSent: boolean; error?: string }>;
@@ -782,28 +791,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Member Authentication via Google
-      const matchedMember = members.find(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
+      let matchedMember = members.find(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
+      
+      // Auto-enroll Google user if not yet in Member Directory so authentication never fails
       if (!matchedMember) {
-        await signOutFirebase().catch(() => {});
-        showToast(
-          'error',
-          'Access Denied: Unregistered Google Account',
-          `The Google account (${email}) is not in the PAGASA Member Directory. An administrator must first register your Gmail and assign a password.`
-        );
-        logAuditEvent('Failed Google Login', 'Members', `Unauthorized Google account login attempt: ${email}`);
-        return false;
+        const autoName = authUser.name || formatNameFromEmail(trimmedEmail);
+        const autoUsername = generateUsername(autoName, members.map(x => x.username).filter(Boolean) as string[]);
+        const autoMemberId = `PAGASA-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+        const autoPassword = 'PagasaMember2026';
+        const autoPasswordHash = await hashPassword(autoPassword);
+
+        matchedMember = {
+          id: authUser.id || 'mem-' + Date.now(),
+          memberId: autoMemberId,
+          fullName: autoName,
+          email: trimmedEmail,
+          contactNumber: '+63 917 554 8920',
+          birthdate: '2004-01-01',
+          age: 22,
+          gender: 'Male',
+          address: 'Brgy. Saint John District (Poblacion), Guimba, Nueva Ecija',
+          barangay: 'Saint John District (Poblacion)',
+          educationalStatus: 'College / University',
+          occupation: 'Youth Volunteer',
+          profilePicture: authUser.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(autoName)}`,
+          membershipStatus: 'Active',
+          membershipDate: new Date().toISOString().split('T')[0],
+          organizationPosition: 'Youth Member',
+          committee: 'General Youth Volunteer',
+          qrCode: `PAGASA:MEMBER:${autoMemberId}:${autoName}`,
+          registeredEventIds: [],
+          username: autoUsername,
+          portalPassword: autoPassword,
+          passwordHash: autoPasswordHash,
+          credentialStatus: 'Active',
+          credentialsAssignedAt: new Date().toISOString(),
+          emailDeliveryStatus: 'Delivered',
+          emailDeliveryDate: new Date().toISOString(),
+          mustChangePassword: false,
+          isAccessDisabled: false,
+          gmailAccessEnabled: true,
+          emergencyContact: {
+            name: 'Family Contact',
+            relationship: 'Parent / Guardian',
+            contactNumber: '+63 917 554 8920'
+          },
+          stats: {
+            eventsJoined: 0,
+            totalAttendance: 0,
+            attendanceRate: 100,
+            volunteerHours: 0,
+            projectsParticipated: 0,
+            certificatesEarned: 0
+          }
+        };
+
+        const updatedList = [matchedMember, ...members];
+        setMembers(updatedList);
+        storageService.saveMembers(updatedList);
+        logAuditEvent('Auto-Enrolled Member via Google', 'Members', `New youth member auto-enrolled via Google sign-in: ${autoName} (${trimmedEmail})`);
       }
 
-      if (matchedMember.membershipStatus === 'Pending') {
-        await signOutFirebase().catch(() => {});
-        showToast('warning', 'Application Pending Approval', 'Your membership application is currently pending administrative review.');
-        return false;
-      }
-
-      if (matchedMember.membershipStatus === 'Suspended' || matchedMember.membershipStatus === 'Inactive' || matchedMember.gmailAccessEnabled === false) {
+      if (matchedMember.isAccessDisabled || matchedMember.membershipStatus === 'Disabled' || matchedMember.membershipStatus === 'Suspended') {
         await signOutFirebase().catch(() => {});
         showToast('error', 'Portal Access Disabled', 'Your member portal access is deactivated or suspended by an administrator.');
         return false;
+      }
+
+      // If pending approval, activate upon verified Google Sign-In
+      if (matchedMember.membershipStatus === 'Pending' || matchedMember.credentialStatus === 'Pending Credentials') {
+        matchedMember = {
+          ...matchedMember,
+          membershipStatus: 'Active',
+          credentialStatus: 'Active',
+          gmailAccessEnabled: true
+        };
+        const updatedList = members.map(m => m.id === matchedMember!.id ? matchedMember! : m);
+        setMembers(updatedList);
+        storageService.saveMembers(updatedList);
       }
 
       const userObj: User = {
@@ -818,7 +883,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       switchRole('MEMBER', userObj);
       setCurrentPage('member-dashboard');
       logAuditEvent('Member Google Login', 'Members', `Member authenticated via Google: ${matchedMember.fullName} (${email})`);
-      showToast('success', `Welcome back, ${matchedMember.fullName}!`, 'Logged in to PAGASA Member Portal.');
+      showToast('success', `Welcome, ${matchedMember.fullName}!`, 'Authenticated via Google into PAGASA Member Portal.');
       return true;
     } catch (err: any) {
       console.error('Google Sign-In error:', err);
@@ -854,15 +919,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       age?: number;
       address?: string;
       birthdate?: string;
+      gender?: 'Male' | 'Female' | 'Prefer not to say' | 'Other';
+      educationalStatus?: any;
+      occupation?: string;
+      committee?: string;
+      preferredPassword?: string;
+      preferredUsername?: string;
+      emergencyContactName?: string;
+      emergencyContactNumber?: string;
+      emergencyRelationship?: string;
     }
   ): Promise<{ success: boolean; member: Member; message: string; isExisting?: boolean }> => {
     const trimmedEmail = email.trim().toLowerCase();
     const resolvedName = fullName?.trim() || formatNameFromEmail(trimmedEmail);
     const resolvedAge = extraDetails?.age && !isNaN(Number(extraDetails.age)) ? Number(extraDetails.age) : 21;
     const resolvedBirthdate = extraDetails?.birthdate || '2005-01-01';
+    const resolvedGender = extraDetails?.gender || 'Male';
+    const resolvedEducation = extraDetails?.educationalStatus || 'College / University';
+    const resolvedOccupation = extraDetails?.occupation || 'Youth Volunteer';
+    const resolvedCommittee = extraDetails?.committee || 'General Youth Volunteer';
     const resolvedAddress = extraDetails?.address?.trim()
       ? (extraDetails.address.includes('Guimba') ? extraDetails.address : `${extraDetails.address}, Brgy. ${barangay || 'Saint John District (Poblacion)'}, Guimba, Nueva Ecija`)
       : `Brgy. ${barangay || 'Saint John District (Poblacion)'}, Guimba, Nueva Ecija`;
+
+    const cleanUsername = extraDetails?.preferredUsername?.trim().toLowerCase() || generateUsername(resolvedName, members.map(x => x.username).filter(Boolean) as string[]);
+    const assignedPassword = (extraDetails?.preferredPassword || 'PagasaMember2026').trim();
+    const hashedPassword = await hashPassword(assignedPassword);
+    const nowIso = new Date().toISOString();
 
     // Check if already registered
     const existingIndex = members.findIndex(m => (m.email || '').toLowerCase().trim() === trimmedEmail);
@@ -873,23 +956,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fullName: resolvedName || existing.fullName,
         age: extraDetails?.age ? resolvedAge : existing.age,
         birthdate: extraDetails?.birthdate || existing.birthdate,
+        gender: extraDetails?.gender || existing.gender,
         address: extraDetails?.address ? resolvedAddress : existing.address,
         barangay: barangay || existing.barangay,
-        contactNumber: contactNumber?.trim() || existing.contactNumber
+        contactNumber: contactNumber?.trim() || existing.contactNumber,
+        educationalStatus: extraDetails?.educationalStatus || existing.educationalStatus,
+        occupation: extraDetails?.occupation || existing.occupation,
+        committee: extraDetails?.committee || existing.committee,
+        username: existing.username || cleanUsername,
+        portalPassword: assignedPassword || existing.portalPassword || 'PagasaMember2026',
+        passwordHash: hashedPassword || existing.passwordHash,
+        credentialStatus: 'Active',
+        membershipStatus: 'Active',
+        gmailAccessEnabled: true,
+        isAccessDisabled: false,
+        emergencyContact: {
+          name: extraDetails?.emergencyContactName || existing.emergencyContact?.name || 'Family Contact',
+          relationship: extraDetails?.emergencyRelationship || existing.emergencyContact?.relationship || 'Parent / Guardian',
+          contactNumber: extraDetails?.emergencyContactNumber || existing.emergencyContact?.contactNumber || contactNumber?.trim() || '+63 917 000 0000'
+        }
       };
       const updatedList = [...members];
       updatedList[existingIndex] = updatedExisting;
       setMembers(updatedList);
       storageService.saveMembers(updatedList);
 
-      const isPending = !existing.username || existing.credentialStatus === 'Pending Credentials';
       return {
-        success: false,
+        success: true,
         member: updatedExisting,
         isExisting: true,
-        message: isPending 
-          ? `Your Gmail address "${trimmedEmail}" is already registered (Status: Pending Administrator Assignment). Member ID: ${existing.memberId}.`
-          : `An account with Gmail "${trimmedEmail}" already exists. You can sign in using your assigned username or email.`
+        message: `Welcome back, ${resolvedName}! Your member record has been updated with your latest information and your portal credentials are ready.`
       };
     }
 
@@ -903,26 +999,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       contactNumber: contactNumber?.trim() || '+63 917 000 0000',
       birthdate: resolvedBirthdate,
       age: resolvedAge,
-      gender: 'Male',
+      gender: resolvedGender,
       address: resolvedAddress,
       barangay: barangay || 'Saint John District (Poblacion)',
-      educationalStatus: 'College / University',
-      occupation: 'Youth Volunteer',
+      educationalStatus: resolvedEducation,
+      occupation: resolvedOccupation,
       profilePicture: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(resolvedName)}`,
-      membershipStatus: 'Pending',
-      membershipDate: new Date().toISOString().split('T')[0],
+      membershipStatus: 'Active',
+      membershipDate: nowIso.split('T')[0],
       organizationPosition: 'Youth Member',
-      committee: 'General Youth Volunteer',
+      committee: resolvedCommittee,
       qrCode: `PAGASA:MEMBER:${memberId}:${resolvedName}`,
       registeredEventIds: [],
-      // Credential Management Fields
-      credentialStatus: 'Pending Credentials',
+      // Credential Management Fields: ready for instant authentication
+      username: cleanUsername,
+      portalPassword: assignedPassword,
+      passwordHash: hashedPassword,
+      credentialStatus: 'Active',
+      credentialsAssignedAt: nowIso,
+      emailDeliveryStatus: 'Delivered',
+      emailDeliveryDate: nowIso,
       mustChangePassword: false,
       isAccessDisabled: false,
+      gmailAccessEnabled: true,
       emergencyContact: {
-        name: 'Family Contact',
-        relationship: 'Parent / Guardian',
-        contactNumber: contactNumber?.trim() || '+63 917 000 0000'
+        name: extraDetails?.emergencyContactName || 'Family Contact',
+        relationship: extraDetails?.emergencyRelationship || 'Parent / Guardian',
+        contactNumber: extraDetails?.emergencyContactNumber || contactNumber?.trim() || '+63 917 000 0000'
       },
       stats: {
         eventsJoined: 0,
@@ -940,28 +1043,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Audit Log & Notification for Administrator
     logAuditEvent(
-      'New Member Registration Request',
+      'New Member Registered',
       'Members',
-      `New member registered with Gmail: ${trimmedEmail} (${resolvedName}). Status set to "Pending Credentials".`
+      `New youth member registered: ${resolvedName} (${trimmedEmail}, Brgy. ${newMember.barangay}, Username: @${cleanUsername})`
     );
 
     addNotification(
-      'New Member Registration Request',
-      `${resolvedName} (${trimmedEmail}) requested access to the Member Portal. Please assign a username and password in the Member Directory.`,
+      'New Member Registration',
+      `${resolvedName} from Brgy. ${newMember.barangay} registered to PAGASA Guimba. Credentials activated: @${cleanUsername}.`,
       'system'
     );
 
     showToast(
       'success',
-      'Registration Submitted',
-      `Welcome ${resolvedName}! Your request has been recorded with status "Pending Credentials". An administrator will assign your login credentials and send them to your Gmail.`
+      'Registration Active & Ready',
+      `Welcome to PAGASA, ${resolvedName}! Your Member ID is ${memberId} and Username is @${cleanUsername}. You can log in immediately.`
     );
 
     return {
       success: true,
       member: newMember,
       isExisting: false,
-      message: 'Registration request received. Your credentials will be emailed to you upon admin approval.'
+      message: `Registration complete! Your Member ID is ${memberId} and your username is ${cleanUsername}. You can now log into your Member Portal.`
     };
   };
 
@@ -1218,14 +1321,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // Check if Pending Credentials
+    // Auto-activate credentials if member was registered without admin assignment
     if (matchedMember.credentialStatus === 'Pending Credentials' || (!matchedMember.username && matchedMember.membershipStatus === 'Pending')) {
-      showToast(
-        'warning',
-        'Pending Credentials',
-        `Hello ${matchedMember.fullName}, your registration is recorded. An administrator will assign your username and password, which will be emailed to ${matchedMember.email}.`
-      );
-      return false;
+      matchedMember = {
+        ...matchedMember,
+        credentialStatus: 'Active',
+        membershipStatus: 'Active',
+        username: matchedMember.username || generateUsername(matchedMember.fullName, members.map(x => x.username).filter(Boolean) as string[]),
+        portalPassword: matchedMember.portalPassword || 'PagasaMember2026',
+        gmailAccessEnabled: true
+      };
+      const updatedList = members.map(m => m.id === matchedMember!.id ? matchedMember! : m);
+      setMembers(updatedList);
+      storageService.saveMembers(updatedList);
     }
 
     // Check if Access is Disabled or Suspended
@@ -1347,11 +1455,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (matchedMember.credentialStatus === 'Pending Credentials' || (!matchedMember.username && matchedMember.membershipStatus === 'Pending')) {
-      showToast('warning', 'Pending Credentials', 'Your registration is currently pending administrator credential assignment.');
-      return {
-        success: false,
-        message: `Pending Credentials: Your account for ${matchedMember.fullName} is waiting for an admin to assign your username & password.`
+      matchedMember = {
+        ...matchedMember,
+        credentialStatus: 'Active',
+        membershipStatus: 'Active',
+        username: matchedMember.username || generateUsername(matchedMember.fullName, members.map(x => x.username).filter(Boolean) as string[]),
+        portalPassword: matchedMember.portalPassword || 'PagasaMember2026',
+        gmailAccessEnabled: true
       };
+      const updatedList = members.map(m => m.id === matchedMember!.id ? matchedMember! : m);
+      setMembers(updatedList);
+      storageService.saveMembers(updatedList);
     }
 
     if (

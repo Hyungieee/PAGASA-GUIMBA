@@ -639,15 +639,39 @@ export const AdminMembers: React.FC = () => {
                           </div>
                         </div>
                         <div>
-                          <div className="flex items-center gap-1.5">
-                            <p className="font-bold text-slate-900">{m.fullName}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p 
+                              className="font-bold text-slate-900 cursor-pointer hover:text-blue-600 transition-colors"
+                              onClick={() => setViewingMember(m)}
+                              title="Click to view complete member profile"
+                            >
+                              {m.fullName}
+                            </p>
                             <span className="font-mono text-[10px] text-slate-400">({m.memberId})</span>
+                            {m.gender && (
+                              <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium">
+                                {m.gender}
+                              </span>
+                            )}
+                            {m.age && (
+                              <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium">
+                                {m.age} y/o
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 font-mono">
                             <Mail className="w-3 h-3 text-red-500 flex-shrink-0" />
                             <span className="text-blue-700 font-semibold">{m.email}</span>
                           </div>
-                          <span className="text-[10px] text-slate-400">Brgy. {m.barangay}</span>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5 flex-wrap">
+                            <span>Brgy. {m.barangay}</span>
+                            {m.contactNumber && <span>• 📞 {m.contactNumber}</span>}
+                            {m.committee && (
+                              <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded text-[9px] font-medium">
+                                {m.committee}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -1016,8 +1040,8 @@ export const AdminMembers: React.FC = () => {
 
       {/* Member QR / Detail Modal */}
       {viewingMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 space-y-4 text-center relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5 text-left relative my-6">
             <button
               onClick={() => setViewingMember(null)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
@@ -1025,34 +1049,129 @@ export const AdminMembers: React.FC = () => {
               <X className="w-5 h-5" />
             </button>
 
-            <img
-              src={viewingMember.profilePicture}
-              alt=""
-              className="w-20 h-20 rounded-full object-cover mx-auto border-2 border-blue-600 shadow-md"
-            />
-            <div>
-              <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-                {viewingMember.memberId}
-              </span>
-              <h3 className="text-lg font-bold text-slate-900 font-display mt-1">{viewingMember.fullName}</h3>
-              <p className="text-xs text-slate-500">Brgy. {viewingMember.barangay}, Guimba</p>
-              <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
-                <Mail className="w-3.5 h-3.5 text-red-500" />
-                <span className="font-mono">{viewingMember.email}</span>
+            <div className="flex items-start gap-4">
+              <img
+                src={viewingMember.profilePicture}
+                alt=""
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-blue-600 shadow-md flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                    {viewingMember.memberId}
+                  </span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    viewingMember.membershipStatus === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {viewingMember.membershipStatus} Member
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 font-display mt-1 truncate">
+                  {viewingMember.fullName}
+                </h3>
+                <p className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
+                  <Mail className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                  <span className="truncate">{viewingMember.email}</span>
+                </p>
               </div>
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl inline-block">
-              <QRCodeSVG value={viewingMember.qrCode || viewingMember.memberId} size={150} />
+            {/* Profile Grid Details */}
+            <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <div>
+                <span className="text-slate-400 block text-[10px]">Gender & Age:</span>
+                <span className="font-semibold text-slate-800">
+                  {viewingMember.gender || 'Not specified'} • {viewingMember.age ? `${viewingMember.age} years old` : 'Age N/A'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Birthday:</span>
+                <span className="font-semibold text-slate-800 font-mono">
+                  {viewingMember.birthdate || 'Not specified'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Barangay & Location:</span>
+                <span className="font-semibold text-slate-800">
+                  Brgy. {viewingMember.barangay}, Guimba
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Contact Mobile:</span>
+                <span className="font-semibold text-slate-800 font-mono">
+                  {viewingMember.contactNumber || 'None provided'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Education:</span>
+                <span className="font-semibold text-slate-800">
+                  {viewingMember.educationalStatus || 'College / University'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Occupation / Role:</span>
+                <span className="font-semibold text-slate-800">
+                  {viewingMember.occupation || 'Youth Volunteer'}
+                </span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-slate-400 block text-[10px]">Committee / Interest:</span>
+                <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 inline-block mt-0.5">
+                  {viewingMember.committee || 'General Youth Volunteer'}
+                </span>
+              </div>
+              {viewingMember.emergencyContact && (
+                <div className="col-span-2 pt-1 border-t border-slate-200/60">
+                  <span className="text-slate-400 block text-[10px]">Emergency Contact:</span>
+                  <span className="font-semibold text-slate-700">
+                    {viewingMember.emergencyContact.name} ({viewingMember.emergencyContact.relationship || 'Guardian'}) - {viewingMember.emergencyContact.contactNumber || 'N/A'}
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-2 pt-2">
+            {/* Credential Status Box */}
+            <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-blue-950 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Portal Credentials</span>
+                </span>
+                <span className="text-[10px] font-mono text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-100">
+                  Status: {viewingMember.credentialStatus || 'Active'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 font-mono text-[11px] pt-1">
+                <div>
+                  <span className="text-slate-500 font-sans text-[10px] block">Portal Username:</span>
+                  <span className="font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 inline-block">
+                    @{viewingMember.username || viewingMember.email.split('@')[0]}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-sans text-[10px] block">Password:</span>
+                  <span className="font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200 inline-block">
+                    {viewingMember.portalPassword || 'PagasaMember2026'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* QR Pass */}
+            <div className="flex items-center justify-center p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+              <div className="text-center space-y-1">
+                <QRCodeSVG value={viewingMember.qrCode || viewingMember.memberId} size={110} className="mx-auto" />
+                <span className="text-[10px] font-mono text-slate-400 block">Digital Verification QR</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-1">
               <button
                 onClick={() => {
                   handleTestLoginAsMember(viewingMember);
                   setViewingMember(null);
                 }}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-blue-500/20"
               >
                 <LogIn className="w-4 h-4" />
                 <span>Open {viewingMember.fullName}'s Portal</span>

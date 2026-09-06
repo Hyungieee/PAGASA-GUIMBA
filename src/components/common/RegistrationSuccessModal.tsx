@@ -8,13 +8,17 @@ interface RegistrationSuccessModalProps {
   onClose: () => void;
   onProceed: () => void;
   memberId: string;
+  username?: string;
+  password?: string;
 }
 
 export const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> = ({
   isOpen,
   onClose,
   onProceed,
-  memberId
+  memberId,
+  username,
+  password
 }) => {
   if (!isOpen) return null;
 
@@ -71,24 +75,44 @@ export const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> =
                 Member Account Ready!
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 max-w-sm mx-auto leading-relaxed">
-                Mabuhay! Your youth membership registration is active. Your assigned Member ID is:
+                Mabuhay! Your youth membership registration is active. Your official credentials are:
               </p>
             </div>
 
-            {/* Member ID Box */}
-            <div className="inline-block px-8 py-3 bg-blue-50/70 border border-blue-200 rounded-2xl">
-              <span className="font-mono text-lg sm:text-xl font-bold text-blue-700 tracking-wide">
-                {memberId || 'PAGASA-2026-0001'}
-              </span>
+            {/* Member ID and Credentials Box */}
+            <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2.5 text-left font-mono text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-sans">Member ID:</span>
+                <span className="font-bold text-blue-700 bg-white px-2.5 py-0.5 rounded border border-blue-100">
+                  {memberId || 'PAGASA-2026-0001'}
+                </span>
+              </div>
+              {username && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-sans">Portal Username:</span>
+                  <span className="font-bold text-slate-900 bg-white px-2.5 py-0.5 rounded border border-slate-200">
+                    @{username}
+                  </span>
+                </div>
+              )}
+              {password && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-sans">Portal Password:</span>
+                  <span className="font-bold text-emerald-700 bg-white px-2.5 py-0.5 rounded border border-emerald-200">
+                    {password}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Green Callout Card */}
             <div className="p-4 bg-emerald-50/70 border border-emerald-200/90 rounded-2xl text-left space-y-1">
-              <h4 className="text-xs font-bold text-emerald-950">
-                Gmail Portal Access Enabled
+              <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Instant Portal Authentication Enabled</span>
               </h4>
               <p className="text-xs text-emerald-800 leading-relaxed">
-                You can now sign in using your registered Gmail address or 1-click Google OAuth.
+                You can immediately enter the Member Portal with 1-click below, or log in anytime using your registered Gmail, Username, or Google Account.
               </p>
             </div>
 
@@ -96,9 +120,9 @@ export const RegistrationSuccessModal: React.FC<RegistrationSuccessModalProps> =
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 onClick={onProceed}
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all cursor-pointer flex items-center gap-2"
               >
-                Proceed to Member Portal
+                <span>Proceed to Member Portal</span>
               </button>
               <button
                 onClick={onClose}

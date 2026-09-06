@@ -20,7 +20,13 @@ import {
   AlertCircle,
   Calendar,
   MapPin,
-  Hash
+  Hash,
+  Eye,
+  EyeOff,
+  Lock,
+  Briefcase,
+  GraduationCap,
+  HeartHandshake
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { calculateAge } from '../../utils/dateUtils';
@@ -43,6 +49,15 @@ export const JoinPage: React.FC = () => {
   const [birthday, setBirthday] = useState('2005-06-15');
   const [barangay, setBarangay] = useState(GUIMBA_BARANGAYS[0]);
   const [contactNumber, setContactNumber] = useState('');
+  const [gender, setGender] = useState<'Male' | 'Female' | 'Prefer not to say' | 'Other'>('Male');
+  const [educationalStatus, setEducationalStatus] = useState<string>('College / University');
+  const [occupation, setOccupation] = useState<string>('Youth Volunteer');
+  const [committee, setCommittee] = useState<string>('General Youth Volunteer');
+  const [preferredPassword, setPreferredPassword] = useState<string>('PagasaMember2026');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [emergencyContactName, setEmergencyContactName] = useState<string>('');
+  const [emergencyContactNumber, setEmergencyContactNumber] = useState<string>('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -57,6 +72,10 @@ export const JoinPage: React.FC = () => {
     address: string;
     birthdate: string;
     barangay: string;
+    gender?: string;
+    educationalStatus?: string;
+    occupation?: string;
+    committee?: string;
     isExisting?: boolean;
     username?: string;
     portalPassword?: string;
@@ -117,7 +136,14 @@ export const JoinPage: React.FC = () => {
         {
           age: parsedAge,
           address: fullAddress,
-          birthdate: birthday
+          birthdate: birthday,
+          gender: gender,
+          educationalStatus: educationalStatus as any,
+          occupation: occupation.trim() || 'Youth Volunteer',
+          committee: committee,
+          preferredPassword: preferredPassword.trim() || 'PagasaMember2026',
+          emergencyContactName: emergencyContactName.trim() || undefined,
+          emergencyContactNumber: emergencyContactNumber.trim() || undefined
         }
       );
 
@@ -132,9 +158,13 @@ export const JoinPage: React.FC = () => {
           address: res.member.address,
           birthdate: res.member.birthdate,
           barangay: res.member.barangay,
+          gender: res.member.gender,
+          educationalStatus: res.member.educationalStatus,
+          occupation: res.member.occupation,
+          committee: res.member.committee,
           username: res.member.username,
           portalPassword: res.member.portalPassword,
-          isExisting: false
+          isExisting: res.isExisting || false
         });
         try {
           confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
@@ -150,6 +180,10 @@ export const JoinPage: React.FC = () => {
           address: res.member.address,
           birthdate: res.member.birthdate,
           barangay: res.member.barangay,
+          gender: res.member.gender,
+          educationalStatus: res.member.educationalStatus,
+          occupation: res.member.occupation,
+          committee: res.member.committee,
           username: res.member.username,
           portalPassword: res.member.portalPassword,
           isExisting: true
@@ -507,12 +541,13 @@ export const JoinPage: React.FC = () => {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Contact / Mobile <span className="text-slate-400 text-[10px]">(Optional)</span>
+                        Contact / Mobile Phone <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                         <input
                           type="tel"
+                          required
                           value={contactNumber}
                           onChange={(e) => setContactNumber(e.target.value)}
                           placeholder="+63 917 000 0000"
@@ -521,12 +556,146 @@ export const JoinPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Gender & Educational Status */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Gender <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={gender}
+                        onChange={(e) => setGender(e.target.value as any)}
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                      >
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Prefer not to say">Prefer not to say</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Educational Attainment <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={educationalStatus}
+                          onChange={(e) => setEducationalStatus(e.target.value)}
+                          className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                        >
+                          <option value="College / University">College / University</option>
+                          <option value="Senior High School">Senior High School</option>
+                          <option value="Junior High School">Junior High School</option>
+                          <option value="Vocational / TVET (TESDA)">Vocational / TVET (TESDA)</option>
+                          <option value="Out of School Youth">Out of School Youth</option>
+                          <option value="Employed Professional">Employed Professional</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Occupation & Committee / Area of Interest */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Occupation / Role <span className="text-slate-400 text-[10px]">(e.g. Student, Volunteer)</span>
+                      </label>
+                      <div className="relative">
+                        <Briefcase className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={occupation}
+                          onChange={(e) => setOccupation(e.target.value)}
+                          placeholder="e.g. Student / Youth Volunteer"
+                          className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Youth Committee / Interest <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={committee}
+                        onChange={(e) => setCommittee(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-medium"
+                      >
+                        <option value="General Youth Volunteer">General Youth Volunteer</option>
+                        <option value="Youth Leadership & Governance">Youth Leadership & Governance</option>
+                        <option value="Environmental Protection & Tree Planting">Environmental Protection & Tree Planting</option>
+                        <option value="Disaster Preparedness & Relief">Disaster Preparedness & Relief</option>
+                        <option value="Sports, Arts & Culture">Sports, Arts & Culture</option>
+                        <option value="Education & Literacy">Education & Literacy</option>
+                        <option value="Health & Community Welfare">Health & Community Welfare</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Portal Password Setup */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Create Portal Password <span className="text-red-500">*</span>
+                      </label>
+                      <span className="text-[11px] text-blue-600 font-mono">Default: PagasaMember2026</span>
+                    </div>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        value={preferredPassword}
+                        onChange={(e) => setPreferredPassword(e.target.value)}
+                        placeholder="Enter password for portal login"
+                        className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition-all font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                        title={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      You will use this password together with your Gmail or assigned username to access the Member Portal.
+                    </p>
+                  </div>
+
+                  {/* Emergency Contact */}
+                  <div className="p-3.5 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-2.5">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                      <HeartHandshake className="w-4 h-4 text-blue-600" />
+                      <span>Emergency Contact Person (Optional)</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <input
+                        type="text"
+                        value={emergencyContactName}
+                        onChange={(e) => setEmergencyContactName(e.target.value)}
+                        placeholder="Parent / Guardian Name"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                      <input
+                        type="tel"
+                        value={emergencyContactNumber}
+                        onChange={(e) => setEmergencyContactNumber(e.target.value)}
+                        placeholder="Emergency Phone Number"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-3.5 bg-sky-50 border border-sky-100 rounded-2xl flex items-start gap-2.5 text-xs text-sky-900 leading-relaxed">
-                  <Info className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
+                <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-950 leading-relaxed">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                   <span>
-                    Upon clicking submit, your member record will be submitted to the administration. The administrator will assign your official <strong>Username</strong> and <strong>Account Password</strong>, which will be emailed to your Gmail. No temporary password needed.
+                    Your profile will be recorded instantly in the official Guimba Member Directory. Upon submission, you will receive an official <strong>Member ID</strong> and immediate access to your Member Portal!
                   </span>
                 </div>
 
@@ -539,12 +708,12 @@ export const JoinPage: React.FC = () => {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Submitting Registration...</span>
+                      <span>Registering Member...</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Submit Member Registration</span>
+                      <span>Complete Youth Member Registration</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -559,7 +728,7 @@ export const JoinPage: React.FC = () => {
                     }}
                     className="text-xs text-slate-500 hover:text-blue-600 font-medium cursor-pointer"
                   >
-                    Already have assigned credentials? <span className="font-bold text-blue-600 underline">Sign In here</span>
+                    Already registered? <span className="font-bold text-blue-600 underline">Sign In here</span>
                   </button>
                 </div>
               </form>
@@ -572,13 +741,15 @@ export const JoinPage: React.FC = () => {
       <RegistrationSuccessModal
         isOpen={successModalOpen}
         memberId={registeredMemberRecord?.memberId || submittedData?.memberId || 'PAGASA-2026-0001'}
+        username={registeredMemberRecord?.username || submittedData?.username}
+        password={registeredMemberRecord?.portalPassword || submittedData?.portalPassword || preferredPassword || 'PagasaMember2026'}
         onClose={() => setSuccessModalOpen(false)}
         onProceed={() => {
           setSuccessModalOpen(false);
           if (registeredMemberRecord) {
             loginAsMemberDirectly(registeredMemberRecord);
           } else {
-            setCurrentPage('home');
+            setCurrentPage('member-dashboard');
           }
         }}
       />
